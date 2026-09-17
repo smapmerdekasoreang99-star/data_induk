@@ -1215,11 +1215,19 @@ function halJadwal() {
                                 : [...new Set(D.jadwal.map(j => j.jam_ke))].sort((a, b) => a - b);
 
   // daftar pilihan sesuai sudut pandang
+  // Daftar pilihan memuat rombel DAN kelompok belajar, termasuk yang
+  // belum punya jadwal sama sekali — supaya jadwal kelompok baru bisa
+  // disusun dari sini, tidak harus lewat tampilan per guru.
   const daftar = sudut === 'kelas'
-    ? [...new Map(D.jadwal.map(j => [j.kelas_id, { id: j.kelas_id, nama: j.kelas, jenis: j.jenis_kelas }])).values()]
-        .concat(D.rombel.filter(r => !D.jadwal.some(j => j.kelas === r.kode))
-                        .map(r => ({ id: null, nama: r.kode, jenis: 'Rombel' })))
-        .sort((a, b) => a.nama.localeCompare(b.nama, 'id', { numeric: true }))
+    ? (() => {
+        const peta = new Map();
+        D.jadwal.forEach(j => peta.set(j.kelas, { id: j.kelas_id, nama: j.kelas, jenis: j.jenis_kelas }));
+        D.rombel.forEach(r => { if (!peta.has(r.kode)) peta.set(r.kode, { id: r.id, nama: r.kode, jenis: 'Rombel' }); });
+        D.kelompok.forEach(k => { if (!peta.has(k.nama)) peta.set(k.nama, { id: k.id, nama: k.nama, jenis: 'Kelompok' }); });
+        return [...peta.values()].sort((a, b) =>
+          (a.jenis === b.jenis ? 0 : a.jenis === 'Rombel' ? -1 : 1) ||
+          a.nama.localeCompare(b.nama, 'id', { numeric: true }));
+      })()
     : D.guru.filter(g => g.status_aktif === 'Aktif')
             .map(g => ({ id: g.id, nama: g.nama, jenis: '' }))
             .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
@@ -1318,8 +1326,9 @@ function halJadwal() {
       Satu sel boleh berisi lebih dari satu guru pada kelompok Tahsin dan Matematika Dasar —
       itu pengajaran beregu, bukan bentrokan.<br>
       Sel berwarna hijau muda adalah jam kelompok belajar: siswa kelas ini berangkat ke
-      kelompoknya masing-masing, jadi tidak diisi dari jadwal kelas. Susunannya diatur
-      lewat tampilan per guru atau dengan memilih kelompoknya langsung.</p>`;
+      kelompoknya masing-masing, jadi tidak diisi dari jadwal kelas.
+      Untuk menyusunnya, pilih kelompoknya sendiri pada daftar di atas —
+      Tahsin dan MD ada di bagian bawah daftar, ditandai "(kelompok)".</p>`;
 
   $$('[data-sudut]').forEach(b => b.onclick = () => {
     ui.jadwalSudut = b.dataset.sudut; ui.jadwalPilih = null; gambar();
