@@ -1,0 +1,133 @@
+# Data Induk Sekolah — SMA Plus Merdeka Soreang
+
+Aplikasi pengelola data induk: siswa, guru, tugas guru, jadwal KBM, kelompok
+belajar, kelas, mata pelajaran, jabatan, dan tahun ajaran.
+
+Satu tempat mengubah, banyak tempat membaca. Aplikasi lain — Kehadiran Guru,
+Absensi Ekskul, dan payroll nanti — membaca data ini, tidak mengubahnya.
+
+---
+
+## 1. Memasang
+
+### a. Siapkan databasenya
+
+Jalankan di SQL Editor Supabase, **berurutan**. Semuanya aman diulang, jadi
+kalau ragu apakah sudah pernah dijalankan, jalankan saja lagi.
+
+| Urutan | Berkas | Isinya |
+|---|---|---|
+| 1 | `13a_langkah_sekarang.sql` | menutup data pribadi guru dari akses publik |
+| 2 | `13b_pulihkan_ekskul.sql` | memulihkan pembacaan data siswa oleh aplikasi ekskul |
+| 3 | `SEKALI_JALAN_fondasi_data_induk.sql` | tugas guru, piket, kelompok belajar, mata pelajaran |
+| 4 | `30_impor_tahsin.sql` bagian A | tabel sementara untuk impor |
+| 5 | *(lewat Table Editor)* | impor `tahsin_keanggotaan.csv` ke tabel `impor_tahsin` |
+| 6 | `30_impor_tahsin.sql` bagian C lalu D | memeriksa, lalu memasukkan keanggotaan |
+| 7 | `31_pengecualian_tahsin.sql` | mencatat siswa yang tidak mengikuti Tahsin |
+| 8 | `32_tambah_siswa_baru.sql` | menambahkan Muhammad Zyian |
+| 9 | `33_jadwal_kbm.sql` | pengaman jadwal dan tampilannya |
+
+Berkas bernomor `01` sampai `12` adalah tahapan awal yang sudah dilewati atau
+sudah digantikan. `09`, `10`, `14`, `15`, dan `21` **tidak berlaku lagi** —
+disusun dari dugaan yang kemudian terbukti keliru.
+
+### b. Sambungkan aplikasinya
+
+Isi tiga baris pertama pada `assets/app.js`:
+
+```js
+const KONFIG = {
+  url:     'https://xxxxx.supabase.co',      // Settings > API > Project URL
+  anonKey: '...',                            // Settings > API > anon public
+  akun:    'operator@smapmerdeka.sch.id',    // akun bersama di Authentication > Users
+  sekolah: 'SMA Plus Merdeka Soreang'
+};
+```
+
+Selama `url` dan `anonKey` masih kosong, aplikasi berjalan dalam **mode contoh**
+dengan data karangan — berguna untuk melihat tampilan tanpa menyentuh database.
+
+Unggah seluruh isi folder ini ke repo GitHub, aktifkan GitHub Pages.
+
+### c. Coba dulu sebelum diserahkan ke petugas
+
+1. Masuk dengan akun bersama. Beranda harus menampilkan 684 siswa dan 39 guru.
+2. Ubah nomor HP seorang guru, simpan, muat ulang halaman — perubahannya harus bertahan.
+3. Tambah satu siswa uji, lalu hapus lagi.
+4. Buka Jadwal KBM, tambah satu jam pelajaran, lalu hapus.
+5. Unduh cadangan dari Beranda.
+
+---
+
+## 2. Cara kerjanya
+
+### Halaman
+
+| Halaman | Isinya |
+|---|---|
+| Beranda | ringkasan jumlah, kelengkapan data, unduh cadangan |
+| Data Siswa | 684 siswa; tambah, ubah, pindah kelas massal, unggah CSV/Excel |
+| Data Guru | 39 guru dengan 19 isian; tugas melekat tampil di tiap baris |
+| Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul |
+| Jadwal KBM | matriks hari × jam, per kelas atau per guru |
+| Kelompok Belajar | Tahsin dan Matematika Dasar beserta anggotanya |
+| Piket & Honor | petugas piket menurut jadwal, komponen honor wali kelas |
+| Kelas & Rombel | 18 rombel tahun berjalan |
+| Mata Pelajaran | dibaca dari `kg_mapel`, dipakai bersama jadwal KBM |
+| Jabatan & Unit | pilihan untuk tugas Staf dan Diperbantukan |
+| Tahun Ajaran | pergantian tahun dan pemandu kenaikan kelas |
+
+### Aturan yang dijaga database, bukan diingat petugas
+
+- Satu kelas satu wali; satu guru hanya boleh menjadi wali satu kelas
+- Tugas Staf dan Diperbantukan wajib menyebut jabatan atau unit
+- Tugas Tambahan wajib menyebut jumlah jam tambahan mengajar
+- Diperbantukan wajib menyebut jam piket unit
+- Guru tidak boleh dijadwalkan di dua tempat pada jam yang sama
+- Rombel tidak boleh diisi dua mata pelajaran pada jam yang sama —
+  kelompok dikecualikan, karena Tahsin dan Matematika Dasar memang beregu
+- Satu siswa satu kelompok untuk tiap mata pelajaran
+- Siswa yang dikecualikan tidak bisa dimasukkan ke kelompoknya, dan sebaliknya
+- Memegang tugas Staf menggugurkan seluruh perhitungan honor tambahan
+
+### Istilah yang mudah tertukar
+
+**Jam tugas tambahan** — tugas khusus yang dibayar lewat penambahan jam
+mengajar. Tidak ada di jadwal KBM; tatap muka maupun transport kedatangan tidak
+diperhitungkan.
+
+**Guru diperbantukan** — penanggung jawab satu unit sekolah, misalnya Lab IPA.
+Mendapat honor penanggung jawab ditambah transport kedatangan pada jam piket
+unitnya sendiri. Bukan piket meja sekolah.
+
+**Rombel** (18) — rombongan belajar administratif, dasar wali kelas dan rapor.
+**Satuan jadwal** (`kg_kelas`, 39) — yang diajar pada satu jam pelajaran:
+18 rombel ditambah 21 kelompok Tahsin. Keduanya berbeda fungsi, bukan duplikasi.
+
+---
+
+## 3. Yang rutin dikerjakan
+
+**Tiap awal tahun ajaran** — Tahun Ajaran → tambah tahun baru → Proses kenaikan
+kelas → aktifkan tahun barunya. Data tahun lama tetap terbaca.
+
+**Mutasi masuk** — Data Siswa → Tambah siswa → tempatkan di rombel → daftarkan
+ke kelompok belajar.
+
+**Mutasi keluar** — ubah statusnya menjadi pindah atau keluar. Jangan dihapus,
+supaya rekap yang sudah dilaporkan tidak berubah surut.
+
+**Cadangan** — unduh dari Beranda sebulan sekali, simpan di drive sekolah.
+Supabase versi gratis tidak menyediakan pemulihan otomatis.
+
+---
+
+## 4. Yang belum selesai
+
+- Keanggotaan kelompok Matematika Dasar — menunggu daftar dari kurikulum
+- Tugas Staf dan Diperbantukan belum ada satu pun tercatat
+- 8 siswa perlu dicatat pengecualian Tahsin-nya (berkas `31`)
+- Aplikasi Kehadiran Guru masih perlu dialihkan ke `v_jadwal` dan
+  `v_guru_piket`, lalu hak tulisnya dicabut
+- Sisa akses anon pada tabel induk belum ditutup seluruhnya
+- Aplikasi payroll tersendiri, dikerjakan setelah data induk mapan
