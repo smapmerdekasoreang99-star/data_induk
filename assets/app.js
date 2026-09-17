@@ -24,7 +24,9 @@ const STATUS_SISWA = ['aktif', 'pindah', 'keluar', 'lulus'];
 const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
 
 let sesi = { token: '', petugas: '', ta: '2026/2027' };
-let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [], jenis: [], piket: [], komponen: [] };
+let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
+          jenis: [], piket: [], komponen: [],
+          kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [] };
 let halaman = 'beranda';
 let sel = new Set();
 let ui = { qSiswa: '', kelasSiswa: '', statusSiswa: 'aktif', hal: 1, ukuran: 50,
@@ -144,6 +146,19 @@ async function muatSemua() {
     D.piket = []; D.komponen = [];
     console.warn('View piket/komponen belum tersedia:', e.message);
   }
+
+  // Kelompok belajar: Tahsin, Matematika Dasar, dan sejenisnya.
+  try {
+    [D.kelompok, D.anggota, D.belumKelompok, D.dikecualikan] = await Promise.all([
+      ambil('v_satuan_jadwal', 'select=*&jenis=eq.Kelompok&order=mapel,nama'),
+      ambil('v_anggota_kelompok', 'select=*'),
+      ambil('v_siswa_belum_berkelompok', 'select=*'),
+      ambil('v_pengecualian', 'select=*')
+    ]);
+  } catch (e) {
+    D.kelompok = []; D.anggota = []; D.belumKelompok = []; D.dikecualikan = [];
+    console.warn('View kelompok belajar belum tersedia:', e.message);
+  }
   D.mapel = (mapel || []).map(m => ({ id: m.id, nama: m.nama_mapel, rumpun: m.rumpun_mapel }));
   D.tugas = tugas || []; D.jabatan = jabatan || []; D.jenis = jenis || [];
 
@@ -260,6 +275,27 @@ function dataContoh() {
     { guru_id:'G004', nama:'Rina Sulastri, S.Si.',    komponen:'UPACARA',   jam_per_minggu:1, asal_angka:'bawaan', belum_diisi:false },
     { guru_id:'G004', nama:'Rina Sulastri, S.Si.',    komponen:'BIMBINGAN', jam_per_minggu:1, asal_angka:'bawaan', belum_diisi:false },
     { guru_id:'G004', nama:'Rina Sulastri, S.Si.',    komponen:'PIKET',     jam_per_minggu:null, asal_angka:'belum ada', belum_diisi:true }
+  ];
+
+  D.kelompok = [
+    { id:'T1', nama:'Tahsin · Pratahsin 1', jenis:'Kelompok', tingkat:0, mapel:'Tahsin', jam_terjadwal:4 },
+    { id:'T2', nama:'Tahsin · Mahir 1', jenis:'Kelompok', tingkat:0, mapel:'Tahsin', jam_terjadwal:4 },
+    { id:'M1', nama:'MD10-1', jenis:'Kelompok', tingkat:10, mapel:'Matematika Dasar', jam_terjadwal:2 }
+  ];
+  D.anggota = [
+    { id:'A1', siswa_id:'S0', nisn:'1000000000', siswa:'Abdan Hamal', kelompok:'Tahsin · Pratahsin 1',
+      mapel:'Tahsin', rombel:'10-1', wali_kelas:'Dra. Siti Aminah, M.Pd.' },
+    { id:'A2', siswa_id:'S1', nisn:'1000000001', siswa:'Agni Mutia', kelompok:'Tahsin · Mahir 1',
+      mapel:'Tahsin', rombel:'10-2', wali_kelas:'' },
+    { id:'A3', siswa_id:'S0', nisn:'1000000000', siswa:'Abdan Hamal', kelompok:'MD10-1',
+      mapel:'Matematika Dasar', rombel:'10-1', wali_kelas:'Dra. Siti Aminah, M.Pd.' }
+  ];
+  D.belumKelompok = [
+    { rombel:'11-1', siswa:'Bayu Ridwan', nisn:'1000000002', siswa_id:'S2', belum_tahsin:'Tahsin', belum_matdas:null }
+  ];
+  D.dikecualikan = [
+    { nisn:'1000000003', siswa:'Citra Lestari', rombel:'11-2', program:'Tahsin',
+      alasan:'Non-muslim', dicatat_oleh:'Wakasek Kesiswaan' }
   ];
 
   D.siswa = [];
@@ -399,7 +435,7 @@ function layarUtama() {
 function gambar() {
   if (!$('#isi')) return;
   ({ beranda: halBeranda, siswa: halSiswa, guru: halGuru, tugas: halTugas,
-     kelas: halKelas, mapel: halMapel, jabatan: halJabatan, piket: halPiket, tahun: halTahun }[halaman] || halBeranda)();
+     kelas: halKelas, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, tahun: halTahun }[halaman] || halBeranda)();
   gambarSelbar();
 }
 
@@ -876,6 +912,167 @@ function akhiriTugas(t) {
   });
 }
 
+
+
+/* ------------------------------------------------- kelompok belajar */
+function halKelompok() {
+  const pilih = ui.kelompokPilih || (D.kelompok[0] && D.kelompok[0].nama) || '';
+  const anggota = D.anggota.filter(a => a.kelompok === pilih)
+                           .sort((a, b) => a.siswa.localeCompare(b.siswa, 'id'));
+  const kel = D.kelompok.find(k => k.nama === pilih);
+  const jumlah = n => D.anggota.filter(a => a.kelompok === n).length;
+
+  // dikelompokkan per mata pelajaran
+  const perMapel = new Map();
+  D.kelompok.forEach(k => {
+    const m = k.mapel || '(belum ada mapel)';
+    if (!perMapel.has(m)) perMapel.set(m, []);
+    perMapel.get(m).push(k);
+  });
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Kelompok Belajar</h1>
+      <p>Pengelompokan ulang siswa untuk mata pelajaran tertentu — Tahsin dan Matematika Dasar.
+         Rapornya tetap dikembalikan ke wali kelas rombel masing-masing.</p></div>
+      <div class="sp"></div>
+      ${kel ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
+      <button class="btn" id="bUnduhKelompok">Unduh rekap</button></div>
+
+    ${D.belumKelompok.length ? `<div class="info-box"><b>${D.belumKelompok.length} siswa belum masuk kelompok</b>
+      dan belum tercatat pengecualiannya. Sebagian mungkin memang tidak mengikuti program —
+      catat pengecualiannya supaya peringatan ini hanya menunjuk yang benar-benar terlewat.
+      <button class="linkish" id="bLihatBelum" style="color:#6B4700">Lihat daftarnya</button></div>` : ''}
+
+    <div class="kartu-baris">
+      <div class="kartu"><b>${D.kelompok.length}</b><span>kelompok</span></div>
+      <div class="kartu"><b>${D.anggota.length}</b><span>keanggotaan tercatat</span></div>
+      <div class="kartu"><b>${D.dikecualikan.length}</b><span>dikecualikan</span></div>
+      ${D.belumKelompok.length ? `<div class="kartu warn"><b>${D.belumKelompok.length}</b><span>belum tertangani</span></div>` : ''}
+    </div>
+
+    ${[...perMapel.entries()].map(([m, daftar]) => `
+      <div class="kelas-rail"><div class="kelas-row">
+        <span class="lbl">${esc(m)}</span>
+        ${daftar.map(k => `<button class="chip ${pilih === k.nama ? 'on' : ''}" data-kel="${esc(k.nama)}">
+          ${esc(k.nama.replace(/^Tahsin · /, ''))}<span class="c">${jumlah(k.nama)}</span></button>`).join('')}
+      </div></div>`).join('')}
+
+    ${kel ? `<div class="panel">
+      <div class="panel-head"><h3>${esc(kel.nama)}</h3>
+        <div class="sp" style="flex:1"></div>
+        <div class="info">${anggota.length} siswa${kel.tingkat ? ' · khusus tingkat ' + kel.tingkat : ' · semua tingkat'}</div></div>
+      <div class="scroll"><table><thead><tr>
+        <th style="width:44px" class="hide-sm">No</th><th>Siswa</th>
+        <th style="width:110px" class="hide-sm">NISN</th>
+        <th style="width:90px">Rombel</th><th style="width:170px" class="hide-sm">Wali kelas</th>
+        <th style="width:110px"></th>
+      </tr></thead><tbody>${
+        anggota.length ? anggota.map((a, i) => `<tr data-id="${esc(a.id)}">
+          <td class="num hide-sm kecil">${i + 1}</td>
+          <td style="font-weight:500">${esc(a.siswa)}</td>
+          <td class="num hide-sm">${esc(a.nisn || '—')}</td>
+          <td>${a.rombel ? `<span class="tag" style="background:${warnaTingkat(tingkatDari(a.rombel))}">${esc(a.rombel)}</span>` : '<span class="kecil">—</span>'}</td>
+          <td class="hide-sm kecil">${esc(a.wali_kelas || '—')}</td>
+          <td class="act"><button class="btn btn-sm btn-d bKeluar">Keluarkan</button></td></tr>`).join('')
+        : `<tr><td colspan="6"><div class="empty"><b>Belum ada anggota</b>Tambahkan lewat tombol di atas.</div></td></tr>`
+      }</tbody></table></div></div>` : `<div class="panel"><div class="empty">
+        <b>Belum ada kelompok belajar</b>Muncul setelah kelompok dibuat dan mata pelajarannya diisi.</div></div>`}
+
+    ${D.dikecualikan.length ? `<div class="panel"><div class="panel-head"><h3>Dikecualikan</h3>
+      <div class="sp" style="flex:1"></div><div class="info">${D.dikecualikan.length} siswa</div></div>
+      <div class="scroll"><table><thead><tr>
+        <th>Siswa</th><th style="width:90px">Rombel</th><th style="width:140px">Program</th>
+        <th>Alasan</th><th style="width:150px" class="hide-sm">Dicatat oleh</th>
+      </tr></thead><tbody>${
+        D.dikecualikan.map(x => `<tr>
+          <td style="font-weight:500">${esc(x.siswa)}</td>
+          <td>${esc(x.rombel || '—')}</td><td>${esc(x.program)}</td>
+          <td class="kecil">${esc(x.alasan)}</td>
+          <td class="hide-sm kecil">${esc(x.dicatat_oleh || '—')}</td></tr>`).join('')
+      }</tbody></table></div></div>` : ''}`;
+
+  $$('[data-kel]').forEach(b => b.onclick = () => { ui.kelompokPilih = b.dataset.kel; gambar(); });
+  if ($('#bTambahAnggota')) $('#bTambahAnggota').onclick = () => formAnggota(kel);
+  if ($('#bLihatBelum')) $('#bLihatBelum').onclick = dialogBelumKelompok;
+  $('#bUnduhKelompok').onclick = unduhRekapKelompok;
+  const tb = $('tbody');
+  if (tb) tb.onclick = e => {
+    const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+    if (e.target.classList.contains('bKeluar'))
+      keluarkanAnggota(D.anggota.find(a => String(a.id) === tr.dataset.id));
+  };
+}
+
+function formAnggota(kel) {
+  // siswa yang belum masuk kelompok untuk mapel ini
+  const sudah = new Set(D.anggota.filter(a => a.mapel === kel.mapel).map(a => a.siswa_id));
+  const dikecualikan = new Set(D.dikecualikan.filter(x => x.program === kel.mapel).map(x => x.nisn));
+  const calon = D.siswa.filter(s => s.status === 'aktif'
+      && !sudah.has(s.id) && !dikecualikan.has(s.nisn)
+      && (!kel.tingkat || tingkatDari(s.kelas) === kel.tingkat));
+
+  formulir({
+    judul: 'Tambah anggota — ' + kel.nama,
+    lebar: true,
+    catatan: kel.tingkat
+      ? `Hanya siswa tingkat ${kel.tingkat} yang dapat dipilih, karena kelompok ini dibentuk per tingkat.`
+      : 'Kelompok ini bercampur semua tingkat.',
+    nilai: {},
+    kolom: [
+      { k: 'siswa_id', label: 'Siswa', tipe: 'pilih', wajib: true,
+        opsi: [{ v: '', t: `— pilih siswa (${calon.length} tersedia) —` },
+               ...calon.sort((a, b) => (a.kelas || '').localeCompare(b.kelas || '', 'id', { numeric: true })
+                                    || a.nama.localeCompare(b.nama, 'id'))
+                       .map(s => ({ v: s.id, t: `${s.kelas || '—'} · ${s.nama}` }))],
+        hint: 'Siswa yang sudah masuk kelompok lain untuk mata pelajaran ini tidak ditampilkan.' }
+    ],
+    simpan: async n => {
+      if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
+      await simpanBaru('anggota_kelompok', {
+        siswa_id: n.siswa_id, kelas_id: kel.id, tahun_ajaran: sesi.ta });
+      await muatSemua();
+      toast('Anggota ditambahkan');
+    }
+  });
+}
+
+function keluarkanAnggota(a) {
+  if (!a) return;
+  konfirmasi({
+    judul: 'Keluarkan dari kelompok',
+    pesan: `Keluarkan <b>${esc(a.siswa)}</b> dari <b>${esc(a.kelompok)}</b>?
+            Setelah ini ia akan muncul sebagai belum masuk kelompok sampai didaftarkan
+            ke kelompok lain atau dicatat pengecualiannya.`,
+    tombol: 'Keluarkan',
+    lanjut: async () => {
+      if (MODE === 'db') await buang('anggota_kelompok', `id=eq.${enc(a.id)}`);
+      D.anggota = D.anggota.filter(x => x.id !== a.id);
+      if (MODE === 'db') await muatSemua();
+      toast(a.siswa + ' dikeluarkan dari kelompok');
+    }
+  });
+}
+
+function dialogBelumKelompok() {
+  const d = D.belumKelompok;
+  bukaModal(`<h2>Belum masuk kelompok</h2><div class="body" style="padding:0">
+    <table class="log"><thead><tr><th>Rombel</th><th>Siswa</th><th>Belum</th></tr></thead>
+    <tbody>${d.map(x => `<tr><td>${esc(x.rombel)}</td><td>${esc(x.siswa)}</td>
+      <td class="kecil">${esc([x.belum_tahsin, x.belum_matdas].filter(Boolean).join(', '))}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="aksi"><button class="btn" id="m-batal">Tutup</button></div>`, true);
+  $('#m-batal').onclick = tutupModal;
+}
+
+function unduhRekapKelompok() {
+  if (!D.anggota.length) return toast('Belum ada keanggotaan untuk diunduh.', true);
+  const kolom = [['Rombel', 'rombel'], ['Siswa', 'siswa'], ['NISN', 'nisn'],
+                 ['Mata pelajaran', 'mapel'], ['Kelompok', 'kelompok'], ['Wali kelas', 'wali_kelas']];
+  const data = D.anggota.slice().sort((a, b) =>
+    (a.rombel || '').localeCompare(b.rombel || '', 'id', { numeric: true })
+    || a.siswa.localeCompare(b.siswa, 'id'));
+  unduhTabel('Kelompok_Belajar', kolom, data);
+}
 
 /* --------------------------------------------------- piket & honor */
 function halPiket() {
