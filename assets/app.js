@@ -13,14 +13,18 @@ const KONFIG = {
   sekolah: 'SMA Plus Merdeka Soreang'
 };
 
-/* Dipakai pada kop berkas cetak. Sesuaikan bila ada yang berubah. */
-const SEKOLAH = {
+/* Nilai cadangan bila tabel profil_dokumen belum ada atau belum diisi.
+   Yang berlaku sehari-hari adalah isian pada halaman Profil Dokumen. */
+const SEKOLAH_BAWAAN = {
   nama:    'SMA Plus "Merdeka" Soreang',
   alamat:  'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung',
   kota:    'Soreang',
   kepala:  'Mohamad Gunawan, S.Si',
   logo:    'assets/logo.png'     // salin dari repo lain; boleh tidak ada
 };
+
+/* Profil yang berlaku. Diisi ulang setiap kali data dimuat. */
+let SEKOLAH = { ...SEKOLAH_BAWAAN };
 
 const MODE = (KONFIG.url && KONFIG.anonKey) ? 'db' : 'contoh';
 
@@ -36,7 +40,7 @@ let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
           jenis: [], piket: [], komponen: [],
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
-          jadwal: [], jamPel: [], piketJadwal: [], galat: {} };
+          jadwal: [], jamPel: [], piketJadwal: [], profil: null, galat: {} };
 let halaman = 'beranda';
 let sel = new Set();
 let ui = { qSiswa: '', kelasSiswa: '', statusSiswa: 'aktif', hal: 1, ukuran: 50,
@@ -173,9 +177,34 @@ async function muatSemua() {
     try { D.piketJadwal = await ambilSemua('v_jadwal_piket', 'select=*'); }
     catch (e) { D.piketJadwal = []; console.warn('v_jadwal_piket belum ada:', e.message); }
   } catch (e) {
-    D.piket = []; D.komponen = [];
+    D.profil = { id:1, nama_sekolah:'SMA Plus "Merdeka" Soreang',
+    alamat:'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung', kota:'Soreang',
+    npsn:'', kepala_sekolah:'Mohamad Gunawan, S.Si', nip_kepala:'', logo_url:'assets/logo.png' };
+  SEKOLAH = { nama:D.profil.nama_sekolah, alamat:D.profil.alamat, kota:D.profil.kota,
+              kepala:D.profil.kepala_sekolah, nip:'', npsn:'', catatan:'', logo:D.profil.logo_url };
+
+  D.piket = []; D.komponen = [];
     D.galat.piket = e.message;
     console.warn('View piket/komponen belum tersedia:', e.message);
+  }
+
+  // Profil dokumen untuk kop berkas cetak.
+  try {
+    const pr = await ambil('profil_dokumen', 'select=*&limit=1');
+    D.profil = (pr && pr[0]) || null;
+    if (D.profil) SEKOLAH = {
+      nama:   D.profil.nama_sekolah || SEKOLAH_BAWAAN.nama,
+      alamat: D.profil.alamat       || '',
+      kota:   D.profil.kota         || '',
+      kepala: D.profil.kepala_sekolah || '',
+      nip:    D.profil.nip_kepala   || '',
+      npsn:   D.profil.npsn         || '',
+      catatan: D.profil.catatan_kaki || '',
+      logo:   D.profil.logo_url     || SEKOLAH_BAWAAN.logo
+    };
+  } catch (e) {
+    D.profil = null; D.galat.profil = e.message;
+    SEKOLAH = { ...SEKOLAH_BAWAAN };
   }
 
   // Jadwal KBM beserta daftar jam pelajarannya.
@@ -303,6 +332,12 @@ function dataContoh() {
     { id:'T5', guru_id:'G002', jenis:'Tugas Tambahan', rombel_id:null, jabatan:null,
       jam_tambahan_mengajar:null, jam_piket_unit:null, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta }
   ];
+
+  D.profil = { id:1, nama_sekolah:'SMA Plus "Merdeka" Soreang',
+    alamat:'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung', kota:'Soreang',
+    npsn:'', kepala_sekolah:'Mohamad Gunawan, S.Si', nip_kepala:'', logo_url:'assets/logo.png' };
+  SEKOLAH = { nama:D.profil.nama_sekolah, alamat:D.profil.alamat, kota:D.profil.kota,
+              kepala:D.profil.kepala_sekolah, nip:'', npsn:'', catatan:'', logo:D.profil.logo_url };
 
   D.piket = [
     { guru_id:'G002', nama:'Ahmad Fauzi, S.Pd.', jam_per_minggu:6, jumlah_hari:4,
@@ -485,7 +520,7 @@ function layarUtama() {
 function gambar() {
   if (!$('#isi')) return;
   ({ beranda: halBeranda, siswa: halSiswa, guru: halGuru, tugas: halTugas,
-     kelas: halKelas, jadwal: halJadwal, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, tahun: halTahun }[halaman] || halBeranda)();
+     kelas: halKelas, jadwal: halJadwal, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, profil: halProfil, tahun: halTahun }[halaman] || halBeranda)();
   gambarSelbar();
 }
 
@@ -1122,7 +1157,8 @@ async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
       c.alignment = { horizontal: 'left', vertical: 'middle' };
     };
     sisiLogo(1, SEKOLAH.nama, 14, true);
-    sisiLogo(2, SEKOLAH.alamat, 10, false);
+    sisiLogo(2, [SEKOLAH.alamat, SEKOLAH.npsn ? 'NPSN ' + SEKOLAH.npsn : '']
+                .filter(Boolean).join('  ·  '), 10, false);
 
     // Judul benar-benar di tengah: digabung dari kolom pertama sampai
     // kolom terakhir, bukan hanya bagian di sebelah logo.
@@ -1194,6 +1230,10 @@ async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
     ws.getCell(r + 1, kolomTtd).value = 'Kepala Sekolah,';
     ws.getCell(r + 5, kolomTtd).value = SEKOLAH.kepala;
     ws.getCell(r + 5, kolomTtd).font = { bold: true, underline: true };
+    if (SEKOLAH.nip) {
+      ws.getCell(r + 6, kolomTtd).value = 'NIP. ' + SEKOLAH.nip;
+      ws.getCell(r + 6, kolomTtd).font = { size: 9.5 };
+    }
 
     const buf = await wb.xlsx.writeBuffer();
     unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
@@ -1418,7 +1458,8 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
         c.alignment = { horizontal: 'center', vertical: 'middle' };
       };
       kiri(1, SEKOLAH.nama, 14, true);
-      kiri(2, SEKOLAH.alamat, 10, false);
+      kiri(2, [SEKOLAH.alamat, SEKOLAH.npsn ? 'NPSN ' + SEKOLAH.npsn : '']
+              .filter(Boolean).join('  ·  '), 10, false);
       tengah(3, 'JADWAL KEGIATAN BELAJAR MENGAJAR', 14, true);
       tengah(4, (sudut === 'kelas' ? 'Kelas ' : 'Guru: ') + nama +
                 `  ·  Semester ${smt}  ·  Tahun Pelajaran ${sesi.ta}`, 10.5, false);
@@ -1513,6 +1554,10 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
       ws.getCell(r + 1, kTtd).value = 'Kepala Sekolah,';
       ws.getCell(r + 5, kTtd).value = SEKOLAH.kepala;
       ws.getCell(r + 5, kTtd).font = { bold: true, underline: true };
+      if (SEKOLAH.nip) {
+        ws.getCell(r + 6, kTtd).value = 'NIP. ' + SEKOLAH.nip;
+        ws.getCell(r + 6, kTtd).font = { size: 9.5 };
+      }
       [r, r + 1].forEach(x => ws.getCell(x, kTtd).font = { size: 10 });
     }
 
@@ -2111,6 +2156,117 @@ function formJabatan(j) {
       // — terutama formulir Tugas Guru — ikut terbarui.
       if (MODE === 'db') await muatSemua();
       toast('Tersimpan');
+    }
+  });
+}
+
+
+/* --------------------------------------------------- profil dokumen */
+function halProfil() {
+  const p = D.profil || {};
+  const contoh = (D.jadwal[0] || {});
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Profil Dokumen</h1>
+      <p>Identitas sekolah yang dipakai pada kop seluruh berkas Excel yang diunduh
+         aplikasi ini — jadwal KBM, jadwal piket, rekap, dan cadangan data.</p></div>
+      <div class="sp"></div>
+      <button class="btn btn-p" id="bUbahProfil">Ubah profil</button></div>
+
+    ${D.galat.profil ? `<div class="info-box"><b>Profil dokumen tidak dapat dibaca.</b>
+      ${esc(D.galat.profil)}<br>Kemungkinan berkas <code>41_profil_dokumen.sql</code> belum dijalankan.
+      Sementara ini kop memakai nilai bawaan yang tertulis di dalam aplikasi.</div>` : ''}
+
+    <div class="panel"><div class="panel-head"><h3>Yang tercetak pada kop</h3></div>
+      <div class="panel-body">
+        <div style="border:1px solid var(--line);border-radius:8px;padding:18px;background:#fff">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="width:62px;height:62px;border:1px dashed var(--line);border-radius:6px;
+                        display:flex;align-items:center;justify-content:center;flex:none;
+                        overflow:hidden;background:#F7FAF9">
+              <img src="${esc(SEKOLAH.logo)}" alt="" style="max-width:100%;max-height:100%"
+                   onerror="this.style.display='none';this.parentNode.innerHTML='<span class=&quot;kecil&quot;>logo</span>'">
+            </div>
+            <div style="flex:1">
+              <div style="font-size:17px;font-weight:600">${esc(SEKOLAH.nama || '—')}</div>
+              <div class="kecil">${esc([SEKOLAH.alamat, SEKOLAH.npsn ? 'NPSN ' + SEKOLAH.npsn : '']
+                                       .filter(Boolean).join('  ·  ') || '—')}</div>
+            </div>
+          </div>
+          <div style="text-align:center;margin:16px 0 6px;border-top:2px solid var(--ink);padding-top:14px">
+            <div style="font-size:15px;font-weight:600">JADWAL KEGIATAN BELAJAR MENGAJAR</div>
+            <div class="kecil">Kelas 10-1 · Semester 1 · Tahun Pelajaran ${esc(sesi.ta)}</div>
+          </div>
+          <div style="text-align:right;margin-top:18px">
+            <div class="kecil">${esc(SEKOLAH.kota || '—')}, ${new Date().toLocaleDateString('id-ID',
+              { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+            <div class="kecil">Kepala Sekolah,</div>
+            <div style="height:34px"></div>
+            <div style="font-weight:600;text-decoration:underline">${esc(SEKOLAH.kepala || '—')}</div>
+            ${SEKOLAH.nip ? `<div class="kecil">NIP. ${esc(SEKOLAH.nip)}</div>` : ''}
+          </div>
+        </div>
+        <p class="kecil" style="margin-top:10px">Tampilan di atas meniru kop berkas Excel,
+          termasuk letak logo dan blok tanda tangan.</p>
+      </div></div>
+
+    <div class="panel"><div class="panel-head"><h3>Isian</h3></div>
+      <div class="scroll"><table><tbody>
+        ${[['Nama sekolah', p.nama_sekolah], ['Alamat', p.alamat], ['Kota tanda tangan', p.kota],
+           ['NPSN', p.npsn], ['Telepon', p.telepon], ['Email', p.email], ['Laman', p.laman],
+           ['Kepala sekolah', p.kepala_sekolah], ['NIP kepala sekolah', p.nip_kepala],
+           ['Berkas logo', p.logo_url], ['Catatan kaki', p.catatan_kaki]]
+          .map(([l, v]) => `<tr><td style="width:210px;color:var(--ink2)">${esc(l)}</td>
+            <td style="font-weight:500">${v ? esc(v) : '<span class="kecil">belum diisi</span>'}</td></tr>`).join('')}
+      </tbody></table></div></div>
+
+    <p class="kecil">Logo diambil dari berkas yang disebut pada isian <b>Berkas logo</b>,
+      relatif terhadap letak aplikasi — biasanya <code>assets/logo.png</code>.
+      Bila berkasnya tidak ada, berkas Excel tetap terbentuk tanpa logo.</p>`;
+
+  $('#bUbahProfil').onclick = () => formProfil();
+}
+
+function formProfil() {
+  const p = D.profil || {};
+  formulir({
+    judul: 'Profil dokumen',
+    lebar: true,
+    catatan: 'Dipakai seragam oleh seluruh unduhan Excel aplikasi ini.',
+    nilai: p,
+    kolom: [
+      { k: 'nama_sekolah', label: 'Nama sekolah', wajib: true,
+        hint: 'Ditulis persis seperti yang dikehendaki muncul di kop.' },
+      { k: 'alamat', label: 'Alamat' },
+      { k: 'npsn', label: 'NPSN' },
+      { k: 'telepon', label: 'Telepon' },
+      { k: 'email', label: 'Email' },
+      { k: 'laman', label: 'Laman' },
+      { k: 'kota', label: 'Kota tanda tangan', hint: 'Muncul sebagai "Soreang, 17 September 2026"' },
+      { k: 'kepala_sekolah', label: 'Nama kepala sekolah' },
+      { k: 'nip_kepala', label: 'NIP kepala sekolah', hint: 'Dikosongkan bila tidak dipakai' },
+      { k: 'logo_url', label: 'Berkas logo',
+        hint: 'Contoh: assets/logo.png — letakkan berkasnya di folder yang sama dengan aplikasi.' },
+      { k: 'catatan_kaki', label: 'Catatan kaki', tipe: 'panjang',
+        hint: 'Opsional, muncul di bagian bawah berkas.' }
+    ],
+    simpan: async n => {
+      const bersih = v => (v == null || String(v).trim() === '') ? null : String(v).trim();
+      const isi = {
+        id: 1,
+        nama_sekolah: n.nama_sekolah.trim(),
+        alamat: bersih(n.alamat), npsn: bersih(n.npsn), telepon: bersih(n.telepon),
+        email: bersih(n.email), laman: bersih(n.laman), kota: bersih(n.kota),
+        kepala_sekolah: bersih(n.kepala_sekolah), nip_kepala: bersih(n.nip_kepala),
+        logo_url: bersih(n.logo_url), catatan_kaki: bersih(n.catatan_kaki)
+      };
+      if (MODE === 'contoh') { Object.assign(D.profil || (D.profil = {}), isi); toast('Mode contoh: tidak tersimpan'); return; }
+      await api('/rest/v1/profil_dokumen?on_conflict=id', {
+        method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify([isi])
+      });
+      await muatSemua();
+      toast('Profil dokumen diperbarui');
     }
   });
 }
