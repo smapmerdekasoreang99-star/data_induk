@@ -1229,14 +1229,27 @@ function halJadwal() {
     (sudut === 'kelas' ? j.kelas === pilih : j.guru === pilih));
 
   const sel = (hari, jam) => baris.filter(j => j.hari === hari && j.jam_ke === jam);
-  const jam = D.jamPel.find(x => true);
+
+  // Jam yang dipakai kelompok belajar — Tahsin dan Matematika Dasar.
+  // Pada tampilan per kelas, jam itu bukan milik rombel: tiap siswa
+  // berangkat ke kelompoknya masing-masing. Jadi ditampilkan sebagai
+  // keterangan dan tidak bisa diisi dari sini.
+  const tingkatKelas = sudut === 'kelas' ? tingkatDari(pilih) : null;
+  const jamKelompok = new Map();
+  if (sudut === 'kelas' && tingkatKelas) {
+    D.jadwal.filter(j => j.semester == smt && j.jenis_kelas === 'Kelompok'
+                      && (!j.tingkat || j.tingkat === tingkatKelas))
+            .forEach(j => jamKelompok.set(j.hari + '|' + j.jam_ke, j.mapel));
+  }
+  const kunci = (h, j) => jamKelompok.get(h + '|' + j);
 
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Jadwal KBM</h1>
       <p>Disunting di sini; aplikasi Kehadiran Guru hanya membacanya.
          Tahun ajaran ${esc(sesi.ta)}, semester ${smt}.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bUnduhJadwal">Unduh jadwal</button></div>
+      <button class="btn" id="bUnduhJadwal">Unduh Excel</button>
+      <button class="btn" id="bUnduhSemua">Unduh semua kelas</button></div>
 
     <div class="bar">
       <button class="chip ${sudut === 'kelas' ? 'on' : ''}" data-sudut="kelas">Per kelas</button>
@@ -1273,6 +1286,10 @@ function halJadwal() {
           <td class="kecil" style="font-weight:600">${jk}
             ${jp && jp.mulai ? `<div class="kecil" style="font-weight:400">${String(jp.mulai).slice(0,5)}</div>` : ''}</td>
           ${HARI.map(h => {
+            const prog = kunci(h, jk);
+            if (prog) return `<td style="background:#EDF5F3;text-align:center;vertical-align:middle">
+              <div style="font-size:12.5px;font-weight:500;color:var(--primary)">Kelompok ${esc(prog)}</div>
+              <div class="kecil">tiap siswa ke kelompoknya</div></td>`;
             const isi = sel(h, jk);
             if (!isi.length) return `<td class="sel-jadwal" data-hari="${h}" data-jam="${jk}"
               style="cursor:pointer;color:var(--ink3);text-align:center">+</td>`;
@@ -1288,17 +1305,19 @@ function halJadwal() {
 
     <p class="kecil">Ketuk sel kosong untuk menambah, atau ketuk isinya untuk mengubah dan menghapus.
       Satu sel boleh berisi lebih dari satu guru pada kelompok Tahsin dan Matematika Dasar —
-      itu pengajaran beregu, bukan bentrokan.</p>`;
+      itu pengajaran beregu, bukan bentrokan.<br>
+      Sel berwarna hijau muda adalah jam kelompok belajar: siswa kelas ini berangkat ke
+      kelompoknya masing-masing, jadi tidak diisi dari jadwal kelas. Susunannya diatur
+      lewat tampilan per guru atau dengan memilih kelompoknya langsung.</p>`;
 
   $$('[data-sudut]').forEach(b => b.onclick = () => {
     ui.jadwalSudut = b.dataset.sudut; ui.jadwalPilih = null; gambar();
   });
   $('#fPilih').onchange = e => { ui.jadwalPilih = e.target.value; gambar(); };
   $('#fSemester').onchange = e => { ui.jadwalSemester = +e.target.value; gambar(); };
-  $('#bUnduhJadwal').onclick = () => unduhTabel('Jadwal_KBM',
-    [['Kelas', 'kelas'], ['Hari', 'hari'], ['Jam ke', 'jam_ke'], ['Mata pelajaran', 'mapel'],
-     ['Guru', 'guru'], ['Semester', 'semester']],
-    D.jadwal.filter(j => j.semester == smt));
+  $('#bUnduhJadwal').onclick = () => unduhJadwalXlsx([pilih], sudut, smt);
+  $('#bUnduhSemua').onclick = () => unduhJadwalXlsx(
+    daftar.filter(d => d.jenis !== 'Kelompok').map(d => d.nama), sudut, smt);
 
   $('tbody').onclick = e => {
     const kotak = e.target.closest('[data-jid]');
@@ -1306,6 +1325,169 @@ function halJadwal() {
     const td = e.target.closest('.sel-jadwal');
     if (td) formJadwal(null, td.dataset.hari, +td.dataset.jam, sudut, pilih, smt);
   };
+}
+
+
+/* Jadwal KBM dalam bentuk Excel berkop. Satu lembar per kelas atau per
+   guru, dengan warna per mata pelajaran supaya pola jadwal terbaca
+   sekilas. Memakai ExcelJS karena butuh logo, penggabungan sel, dan
+   pewarnaan — SheetJS tidak menyediakannya.                          */
+const WARNA_RUMPUN = ['FFE8F1F7','FFF3EDF7','FFEAF4EF','FFFDF6E7','FFF7EDEA','FFEDF1F7'];
+
+async function unduhJadwalXlsx(daftarNama, sudut, smt) {
+  await jalankan('Menyiapkan berkas…', async () => {
+    const ExcelJS = await muatExcelJS();
+    const wb = new ExcelJS.Workbook();
+    const HR = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+    // satu warna per mata pelajaran, tetap sama di seluruh lembar
+    const mapelUrut = [...new Set(D.jadwal.map(j => j.mapel))].sort();
+    const warna = m => WARNA_RUMPUN[mapelUrut.indexOf(m) % WARNA_RUMPUN.length];
+
+    let logoId = null;
+    try {
+      const gbr = await fetch(SEKOLAH.logo).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
+      logoId = wb.addImage({ buffer: gbr, extension: 'png' });
+    } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
+
+    for (const nama of daftarNama) {
+      const baris = D.jadwal.filter(j => j.semester == smt &&
+        (sudut === 'kelas' ? j.kelas === nama : j.guru === nama));
+      const jamKe = [...new Set(D.jadwal.filter(j => j.semester == smt).map(j => j.jam_ke))]
+                      .sort((a, b) => a - b);
+      const hariAda = HR.filter(h => D.jadwal.some(j => j.semester == smt && j.hari === h));
+      if (!hariAda.length) continue;
+
+      // jam kelompok belajar untuk kelas ini
+      const tingkat = sudut === 'kelas' ? tingkatDari(nama) : null;
+      const jamKelompok = new Map();
+      if (tingkat) D.jadwal.filter(j => j.semester == smt && j.jenis_kelas === 'Kelompok'
+                                     && (!j.tingkat || j.tingkat === tingkat))
+                           .forEach(j => jamKelompok.set(j.hari + '|' + j.jam_ke, j.mapel));
+
+      const ws = wb.addWorksheet(nama.replace(/[\\/?*\[\]:]/g, '-').slice(0, 31), {
+        pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } }
+      });
+      const kolomAkhir = hariAda.length + 1;
+      ws.columns = [{ width: 11 }, ...hariAda.map(() => ({ width: 21 }))];
+
+      if (logoId !== null) ws.addImage(logoId, { tl: { col: 0.2, row: 0.15 }, ext: { width: 62, height: 62 } });
+
+      const kiri = (r, t, u, tb) => {
+        ws.mergeCells(r, 2, r, kolomAkhir);
+        const c = ws.getCell(r, 2);
+        c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
+        c.alignment = { horizontal: 'left', vertical: 'middle' };
+      };
+      const tengah = (r, t, u, tb, wrn) => {
+        ws.mergeCells(r, 1, r, kolomAkhir);
+        const c = ws.getCell(r, 1);
+        c.value = t; c.font = { name: 'Calibri', size: u, bold: tb, color: { argb: wrn || 'FF12262E' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+      };
+      kiri(1, SEKOLAH.nama, 14, true);
+      kiri(2, SEKOLAH.alamat, 10, false);
+      tengah(3, 'JADWAL KEGIATAN BELAJAR MENGAJAR', 14, true);
+      tengah(4, (sudut === 'kelas' ? 'Kelas ' : 'Guru: ') + nama +
+                `  ·  Semester ${smt}  ·  Tahun Pelajaran ${sesi.ta}`, 10.5, false);
+      ws.getRow(1).height = 24; ws.getRow(2).height = 18;
+      ws.getRow(3).height = 26; ws.getRow(4).height = 20;
+      for (let k = 1; k <= kolomAkhir; k++)
+        ws.getCell(4, k).border = { bottom: { style: 'medium', color: { argb: 'FF12262E' } } };
+
+      let r = 6;
+      const judul = ws.getRow(r);
+      ['Jam', ...hariAda].forEach((t, i) => {
+        const c = judul.getCell(i + 1);
+        c.value = t;
+        c.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+        c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
+                     left: { style: 'thin' }, right: { style: 'thin' } };
+      });
+      judul.height = 24;
+      r++;
+
+      jamKe.forEach(jk => {
+        const jp = D.jamPel.find(x => x.jam_ke === jk);
+        const br = ws.getRow(r);
+        const sel1 = br.getCell(1);
+        sel1.value = jp && jp.mulai
+          ? `Jam ${jk}\n${String(jp.mulai).slice(0,5)}–${String(jp.selesai || '').slice(0,5)}`
+          : `Jam ${jk}`;
+        sel1.font = { bold: true, size: 9.5 };
+        sel1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        sel1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F5F4' } };
+
+        hariAda.forEach((h, i) => {
+          const c = br.getCell(i + 2);
+          const prog = jamKelompok.get(h + '|' + jk);
+          const isi = baris.filter(j => j.hari === h && j.jam_ke === jk);
+
+          if (prog) {
+            c.value = `Kelompok ${prog}`;
+            c.font = { size: 10, italic: true, color: { argb: 'FF0F6E5C' } };
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDF5F3' } };
+          } else if (isi.length) {
+            c.value = {
+              richText: isi.flatMap((j, n) => ([
+                ...(n ? [{ text: '\n' }] : []),
+                { text: (sudut === 'kelas' ? j.mapel : j.kelas) + '\n',
+                  font: { bold: true, size: 10.5, color: { argb: 'FF12262E' } } },
+                { text: sudut === 'kelas' ? j.guru : j.mapel,
+                  font: { size: 9, color: { argb: 'FF48606A' } } }
+              ]))
+            };
+            c.fill = { type: 'pattern', pattern: 'solid',
+                       fgColor: { argb: warna(isi[0].mapel) } };
+          } else {
+            c.value = '';
+          }
+          c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        });
+
+        br.eachCell(c => {
+          c.border = { top: { style: 'thin', color: { argb: 'FFD6DEDC' } },
+                       bottom: { style: 'thin', color: { argb: 'FFD6DEDC' } },
+                       left: { style: 'thin', color: { argb: 'FFD6DEDC' } },
+                       right: { style: 'thin', color: { argb: 'FFD6DEDC' } } };
+        });
+        const terbanyak = Math.max(1, ...hariAda.map(h =>
+          baris.filter(j => j.hari === h && j.jam_ke === jk).length));
+        br.height = Math.max(32, terbanyak * 28);
+        r++;
+      });
+
+      // ringkasan & tanda tangan
+      r += 1;
+      ws.mergeCells(r, 1, r, kolomAkhir);
+      const rk = ws.getCell(r, 1);
+      rk.value = `${baris.length} jam pelajaran per minggu` +
+        (sudut === 'kelas' ? '' : ` · ${new Set(baris.map(j => j.kelas)).size} kelas`);
+      rk.font = { size: 9.5, italic: true, color: { argb: 'FF48606A' } };
+      rk.alignment = { horizontal: 'left' };
+
+      r += 2;
+      const kTtd = Math.max(2, kolomAkhir - 1);
+      const tgl = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      ws.getCell(r, kTtd).value = `${SEKOLAH.kota}, ${tgl}`;
+      ws.getCell(r + 1, kTtd).value = 'Kepala Sekolah,';
+      ws.getCell(r + 5, kTtd).value = SEKOLAH.kepala;
+      ws.getCell(r + 5, kTtd).font = { bold: true, underline: true };
+      [r, r + 1].forEach(x => ws.getCell(x, kTtd).font = { size: 10 });
+    }
+
+    if (!wb.worksheets.length) throw new Error('Tidak ada jadwal untuk diunduh.');
+    const buf = await wb.xlsx.writeBuffer();
+    const namaBerkas = daftarNama.length === 1
+      ? `Jadwal_${daftarNama[0].replace(/[^\w-]/g, '_')}_${stempel()}.xlsx`
+      : `Jadwal_KBM_Semua_${stempel()}.xlsx`;
+    unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+              namaBerkas);
+    toast(`${wb.worksheets.length} lembar jadwal diunduh`);
+  });
 }
 
 function formJadwal(j, hari, jamKe, sudut, pilih, smt) {
