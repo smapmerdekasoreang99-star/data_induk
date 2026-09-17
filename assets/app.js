@@ -1029,28 +1029,45 @@ async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
 
     ws.columns = [{ width: 13 }, ...hari.map(() => ({ width: 26 }))];
 
-    // logo, bila ada
+    // Logo di kiri atas, menempati baris 1-2 kolom pertama.
     try {
       const gbr = await fetch(SEKOLAH.logo).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
       const id = wb.addImage({ buffer: gbr, extension: 'png' });
-      ws.addImage(id, { tl: { col: 0.15, row: 0.15 }, ext: { width: 58, height: 58 } });
+      ws.addImage(id, { tl: { col: 0.2, row: 0.15 }, ext: { width: 62, height: 62 } });
     } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
 
-    const kop = (baris, teks, ukuran, tebal) => {
+    // Nama dan alamat sekolah DI SEBELAH logo, rata kiri.
+    const sisiLogo = (baris, teks, ukuran, tebal) => {
       ws.mergeCells(baris, 2, baris, kolomTerakhir);
       const c = ws.getCell(baris, 2);
       c.value = teks;
       c.font = { name: 'Calibri', size: ukuran, bold: tebal };
+      c.alignment = { horizontal: 'left', vertical: 'middle' };
+    };
+    sisiLogo(1, SEKOLAH.nama, 14, true);
+    sisiLogo(2, SEKOLAH.alamat, 10, false);
+
+    // Judul benar-benar di tengah: digabung dari kolom pertama sampai
+    // kolom terakhir, bukan hanya bagian di sebelah logo.
+    const tengah = (baris, teks, ukuran, tebal) => {
+      ws.mergeCells(baris, 1, baris, kolomTerakhir);
+      const c = ws.getCell(baris, 1);
+      c.value = teks;
+      c.font = { name: 'Calibri', size: ukuran, bold: tebal };
       c.alignment = { horizontal: 'center', vertical: 'middle' };
     };
-    kop(1, SEKOLAH.nama, 14, true);
-    kop(2, SEKOLAH.alamat, 10, false);
-    kop(3, 'JADWAL PIKET MEJA SEKOLAH', 13, true);
-    kop(4, `Tahun Pelajaran ${sesi.ta}`, 10, false);
-    [1, 2, 3, 4].forEach(r => ws.getRow(r).height = 20);
+    tengah(3, 'JADWAL PIKET MEJA SEKOLAH', 14, true);
+    tengah(4, `Tahun Pelajaran ${sesi.ta}`, 10, false);
 
-    // garis bawah kop
-    ws.getRow(4).eachCell(c => { c.border = { bottom: { style: 'medium' } }; });
+    ws.getRow(1).height = 24;
+    ws.getRow(2).height = 20;
+    ws.getRow(3).height = 26;
+    ws.getRow(4).height = 20;
+
+    // Garis bawah kop, dari kolom pertama sampai terakhir.
+    for (let k = 1; k <= kolomTerakhir; k++) {
+      ws.getCell(4, k).border = { bottom: { style: 'medium' } };
+    }
 
     let r = 6;
     const judul = ws.getRow(r);
