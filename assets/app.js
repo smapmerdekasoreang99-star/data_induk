@@ -7,10 +7,19 @@
    tampilan bisa dicoba dengan data karangan, tanpa menyentuh database.
    ===================================================================== */
 const KONFIG = {
-  url:     '',                                 // https://xxxxx.supabase.co
-  anonKey: '',                                 // Settings > API > anon public
+  url:     'https://xgtoneyvzfvfbidicotq.supabase.co',                                 // https://xxxxx.supabase.co
+  anonKey: 'sb_publishable_rjHVGT0ULc03TC2ljIytSA_2X54xzR1',                                 // Settings > API > anon public
   akun:    'operator@smapmerdeka.sch.id',      // akun bersama
   sekolah: 'SMA Plus Merdeka Soreang'
+};
+
+/* Dipakai pada kop berkas cetak. Sesuaikan bila ada yang berubah. */
+const SEKOLAH = {
+  nama:    'SMA Plus "Merdeka" Soreang',
+  alamat:  'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung',
+  kota:    'Soreang',
+  kepala:  'Mohamad Gunawan, S.Si',
+  logo:    'assets/logo.png'     // salin dari repo lain; boleh tidak ada
 };
 
 const MODE = (KONFIG.url && KONFIG.anonKey) ? 'db' : 'contoh';
@@ -27,7 +36,7 @@ let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
           jenis: [], piket: [], komponen: [],
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
-          jadwal: [], jamPel: [] };
+          jadwal: [], jamPel: [], piketJadwal: [] };
 let halaman = 'beranda';
 let sel = new Set();
 let ui = { qSiswa: '', kelasSiswa: '', statusSiswa: 'aktif', hal: 1, ukuran: 50,
@@ -143,6 +152,8 @@ async function muatSemua() {
       ambil('v_guru_piket', 'select=*'),
       ambil('v_komponen_guru', 'select=*')
     ]);
+    try { D.piketJadwal = await ambil('v_jadwal_piket', 'select=*'); }
+    catch (e) { D.piketJadwal = []; console.warn('v_jadwal_piket belum ada:', e.message); }
   } catch (e) {
     D.piket = []; D.komponen = [];
     console.warn('View piket/komponen belum tersedia:', e.message);
@@ -938,6 +949,165 @@ function akhiriTugas(t) {
 
 
 
+
+/* ------------------------------------------- matriks jadwal piket */
+function halPiketMatriks() {
+  const HR = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const data = D.piketJadwal || [];
+  const jamKe = [...new Set(data.map(p => p.jam_ke))].sort((a, b) => a - b);
+  const pakai = HR.filter(h => data.some(p => p.hari === h));
+  const sel = (h, j) => data.filter(p => p.hari === h && p.jam_ke === j);
+  const jamTeks = j => {
+    const x = data.find(p => p.jam_ke === j && p.jam_mulai);
+    return x ? String(x.jam_mulai).slice(0, 5) + '–' + String(x.jam_selesai || '').slice(0, 5) : '';
+  };
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Matriks Jadwal Piket</h1>
+      <p>Siapa berjaga pada hari dan jam mana. Jam yang kosong tidak ada petugasnya.</p></div>
+      <div class="sp"></div>
+      <button class="btn btn-p" id="bUnduhPiket">Unduh Excel</button></div>
+
+    <div class="bar">
+      <button class="chip" data-tab="ringkasan">Ringkasan</button>
+      <button class="chip on" data-tab="matriks">Matriks jadwal piket</button>
+    </div>
+
+    ${!data.length ? `<div class="panel"><div class="empty"><b>Belum ada jadwal piket terbaca</b>
+      Jalankan berkas 35 lebih dulu, lalu muat ulang halaman.</div></div>` : `
+    <div class="panel"><div class="scroll"><table><thead><tr>
+      <th style="width:92px">Jam</th>
+      ${pakai.map(h => `<th style="text-align:center">${h}</th>`).join('')}
+    </tr></thead><tbody>${
+      jamKe.map(j => `<tr>
+        <td style="font-weight:600">Jam ${j}
+          ${jamTeks(j) ? `<div class="kecil" style="font-weight:400">${esc(jamTeks(j))}</div>` : ''}</td>
+        ${pakai.map(h => {
+          const isi = sel(h, j);
+          if (!isi.length) return '<td style="background:#F7FAF9"></td>';
+          return `<td style="vertical-align:top">${isi.map(p => `
+            <div style="margin-bottom:4px">
+              <div style="font-size:13px;font-weight:500">${esc(p.guru)}</div>
+              <div class="kecil">${esc(p.dasar)}${p.staf ? ' · tanpa transport' : ''}</div>
+            </div>`).join('')}</td>`;
+        }).join('')}
+      </tr>`).join('')
+    }</tbody></table></div>
+    <div class="foot"><div class="info">${data.length} jam piket ·
+      ${new Set(data.map(p => p.guru_id)).size} petugas ·
+      ${pakai.length} hari</div></div></div>
+
+    <p class="kecil">Sel kosong berarti tidak ada petugas piket pada jam itu.
+      Keterangan di bawah nama menunjukkan atas dasar apa ia berjaga.</p>`}`;
+
+  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
+  if ($('#bUnduhPiket')) $('#bUnduhPiket').onclick = () => unduhPiketXlsx(pakai, jamKe, sel, jamTeks);
+}
+
+/* Berkas Excel berkop, memakai ExcelJS supaya logo dan penggabungan sel
+   bisa dipakai — SheetJS tidak mendukung penyisipan gambar.            */
+async function muatExcelJS() {
+  if (window.ExcelJS) return window.ExcelJS;
+  await new Promise((selesai, gagal) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    sc.onload = selesai;
+    sc.onerror = () => gagal(new Error('Pembuat Excel gagal dimuat. Periksa sambungan internet.'));
+    document.head.appendChild(sc);
+  });
+  return window.ExcelJS;
+}
+
+async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
+  await jalankan('Menyiapkan berkas…', async () => {
+    const ExcelJS = await muatExcelJS();
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Jadwal Piket', {
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+    });
+    const kolomTerakhir = hari.length + 1;
+
+    ws.columns = [{ width: 13 }, ...hari.map(() => ({ width: 26 }))];
+
+    // logo, bila ada
+    try {
+      const gbr = await fetch(SEKOLAH.logo).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
+      const id = wb.addImage({ buffer: gbr, extension: 'png' });
+      ws.addImage(id, { tl: { col: 0.15, row: 0.15 }, ext: { width: 58, height: 58 } });
+    } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
+
+    const kop = (baris, teks, ukuran, tebal) => {
+      ws.mergeCells(baris, 2, baris, kolomTerakhir);
+      const c = ws.getCell(baris, 2);
+      c.value = teks;
+      c.font = { name: 'Calibri', size: ukuran, bold: tebal };
+      c.alignment = { horizontal: 'center', vertical: 'middle' };
+    };
+    kop(1, SEKOLAH.nama, 14, true);
+    kop(2, SEKOLAH.alamat, 10, false);
+    kop(3, 'JADWAL PIKET MEJA SEKOLAH', 13, true);
+    kop(4, `Tahun Pelajaran ${sesi.ta}`, 10, false);
+    [1, 2, 3, 4].forEach(r => ws.getRow(r).height = 20);
+
+    // garis bawah kop
+    ws.getRow(4).eachCell(c => { c.border = { bottom: { style: 'medium' } }; });
+
+    let r = 6;
+    const judul = ws.getRow(r);
+    ['Jam', ...hari].forEach((t, i) => {
+      const c = judul.getCell(i + 1);
+      c.value = t;
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+      c.alignment = { horizontal: 'center', vertical: 'middle' };
+      c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
+                   left: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    judul.height = 22;
+    r++;
+
+    jamKe.forEach(j => {
+      const baris = ws.getRow(r);
+      const kiri = baris.getCell(1);
+      kiri.value = jamTeks(j) ? `Jam ${j}\n${jamTeks(j)}` : `Jam ${j}`;
+      kiri.font = { bold: true, size: 10 };
+      kiri.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+      hari.forEach((h, i) => {
+        const c = baris.getCell(i + 2);
+        const isi = sel(h, j);
+        c.value = isi.map(p => p.guru + (p.staf ? ' (staf)' : '')).join('\n');
+        c.alignment = { vertical: 'middle', wrapText: true };
+        c.font = { size: 10 };
+        if (!isi.length) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+      });
+
+      baris.eachCell(c => {
+        c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
+                     left: { style: 'thin' }, right: { style: 'thin' } };
+      });
+      const terbanyak = Math.max(1, ...hari.map(h => sel(h, j).length));
+      baris.height = Math.max(24, terbanyak * 15);
+      r++;
+    });
+
+    // blok tanda tangan
+    r += 2;
+    const kolomTtd = Math.max(2, kolomTerakhir - 1);
+    const hariIni = new Date().toLocaleDateString('id-ID',
+      { day: 'numeric', month: 'long', year: 'numeric' });
+    ws.getCell(r, kolomTtd).value = `${SEKOLAH.kota}, ${hariIni}`;
+    ws.getCell(r + 1, kolomTtd).value = 'Kepala Sekolah,';
+    ws.getCell(r + 5, kolomTtd).value = SEKOLAH.kepala;
+    ws.getCell(r + 5, kolomTtd).font = { bold: true, underline: true };
+
+    const buf = await wb.xlsx.writeBuffer();
+    unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+              `Jadwal_Piket_${stempel()}.xlsx`);
+    toast('Jadwal piket diunduh');
+  });
+}
+
 /* ---------------------------------------------------------- jadwal */
 const HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const idJadwalBaru = () => 'JD' + Date.now().toString(36).toUpperCase();
@@ -1270,10 +1440,17 @@ function halPiket() {
     perGuru.get(k.nama)[k.komponen] = k;
   });
 
+  if ((ui.piketTab || 'ringkasan') === 'matriks') return halPiketMatriks();
+
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Piket &amp; Komponen Honor</h1>
       <p>Halaman baca saja. Jadwal piket dikelola aplikasi Kehadiran Guru;
          di sini hanya ditampilkan siapa bertugas dan berapa jamnya.</p></div></div>
+
+    <div class="bar">
+      <button class="chip on" data-tab="ringkasan">Ringkasan</button>
+      <button class="chip" data-tab="matriks">Matriks jadwal piket</button>
+    </div>
 
     ${belumDasar.length ? `<div class="info-box"><b>${belumDasar.length} guru ada di jadwal piket
       tetapi belum tercatat dasar penugasannya.</b> Catatkan lewat halaman Tugas Guru — sebagai
@@ -1340,6 +1517,7 @@ function halPiket() {
       dihitung berdasarkan jam kerja lewat fingerprint. Kalau ada staf yang masih tampil,
       berarti tugas Staf-nya belum dicatat di halaman Tugas Guru.</p>`;
 
+  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
   $$('.sel-komponen').forEach(el => el.onclick = () => {
     const x = D.komponen.find(c => String(c.tugas_id) === el.dataset.tugas
                                 && c.komponen === el.dataset.komponen);
