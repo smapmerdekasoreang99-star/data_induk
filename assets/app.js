@@ -1235,13 +1235,24 @@ function halJadwal() {
   // berangkat ke kelompoknya masing-masing. Jadi ditampilkan sebagai
   // keterangan dan tidak bisa diisi dari sini.
   const tingkatKelas = sudut === 'kelas' ? tingkatDari(pilih) : null;
+  // Satu jam bisa dipakai lebih dari satu program. Seluruhnya
+  // dikumpulkan, bukan dipilih salah satu — kalau hanya satu yang
+  // ditampilkan, yang terbaca bergantung urutan data dan mudah
+  // menyesatkan.
   const jamKelompok = new Map();
   if (sudut === 'kelas' && tingkatKelas) {
     D.jadwal.filter(j => j.semester == smt && j.jenis_kelas === 'Kelompok'
                       && (!j.tingkat || j.tingkat === tingkatKelas))
-            .forEach(j => jamKelompok.set(j.hari + '|' + j.jam_ke, j.mapel));
+            .forEach(j => {
+              const k = j.hari + '|' + j.jam_ke;
+              if (!jamKelompok.has(k)) jamKelompok.set(k, new Set());
+              jamKelompok.get(k).add(j.mapel);
+            });
   }
-  const kunci = (h, j) => jamKelompok.get(h + '|' + j);
+  const kunci = (h, j) => {
+    const v = jamKelompok.get(h + '|' + j);
+    return v ? [...v].sort() : null;
+  };
 
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Jadwal KBM</h1>
@@ -1288,7 +1299,7 @@ function halJadwal() {
           ${HARI.map(h => {
             const prog = kunci(h, jk);
             if (prog) return `<td style="background:#EDF5F3;text-align:center;vertical-align:middle">
-              <div style="font-size:12.5px;font-weight:500;color:var(--primary)">${esc(prog)}</div>
+              <div style="font-size:12.5px;font-weight:500;color:var(--primary)">${esc(prog.join(' · '))}</div>
               <div class="kecil">berdasarkan kelompoknya</div></td>`;
             const isi = sel(h, jk);
             if (!isi.length) return `<td class="sel-jadwal" data-hari="${h}" data-jam="${jk}"
@@ -1363,7 +1374,11 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
       const jamKelompok = new Map();
       if (tingkat) D.jadwal.filter(j => j.semester == smt && j.jenis_kelas === 'Kelompok'
                                      && (!j.tingkat || j.tingkat === tingkat))
-                           .forEach(j => jamKelompok.set(j.hari + '|' + j.jam_ke, j.mapel));
+                           .forEach(j => {
+                             const k = j.hari + '|' + j.jam_ke;
+                             if (!jamKelompok.has(k)) jamKelompok.set(k, new Set());
+                             jamKelompok.get(k).add(j.mapel);
+                           });
 
       const ws = wb.addWorksheet(nama.replace(/[\\/?*\[\]:]/g, '-').slice(0, 31), {
         pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
@@ -1430,7 +1445,8 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
 
         hariAda.forEach((h, i) => {
           const c = br.getCell(i + 2);
-          const prog = jamKelompok.get(h + '|' + jk);
+          const progSet = jamKelompok.get(h + '|' + jk);
+          const prog = progSet ? [...progSet].sort().join(' · ') : null;
           const isi = baris.filter(j => j.hari === h && j.jam_ke === jk);
 
           if (prog) {
