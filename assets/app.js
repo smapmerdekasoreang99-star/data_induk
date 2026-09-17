@@ -7,8 +7,8 @@
    tampilan bisa dicoba dengan data karangan, tanpa menyentuh database.
    ===================================================================== */
 const KONFIG = {
-  url:     'https://xgtoneyvzfvfbidicotq.supabase.co',                                 // https://xxxxx.supabase.co
-  anonKey: 'sb_publishable_rjHVGT0ULc03TC2ljIytSA_2X54xzR1',                                 // Settings > API > anon public
+  url:     '',                                 // https://xxxxx.supabase.co
+  anonKey: '',                                 // Settings > API > anon public
   akun:    'operator@smapmerdeka.sch.id',      // akun bersama
   sekolah: 'SMA Plus Merdeka Soreang'
 };
@@ -106,6 +106,23 @@ async function api(jalur, opsi = {}) {
   return data;
 }
 const ambil = (tabel, query = '') => api(`/rest/v1/${tabel}?${query}`);
+
+/* PostgREST membatasi setiap permintaan pada 1.000 baris. Tanpa
+   pengambilan bertahap, tabel besar terpotong diam-diam — dan yang
+   hilang justru bagian akhir, sehingga terlihat seperti data yang
+   memang belum ada. Dipakai untuk seluruh tabel yang bisa melewati
+   seribu baris. */
+async function ambilSemua(tabel, query = '') {
+  let hasil = [], offset = 0;
+  for (;;) {
+    const d = await ambil(tabel, `${query}${query ? '&' : ''}limit=1000&offset=${offset}`);
+    if (!d || !d.length) break;
+    hasil = hasil.concat(d);
+    if (d.length < 1000) break;
+    offset += 1000;
+  }
+  return hasil;
+}
 const simpanBaru = (tabel, isi, tambahan = '') =>
   api(`/rest/v1/${tabel}${tambahan ? '?' + tambahan : ''}`,
       { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify([isi]) });
@@ -138,7 +155,7 @@ async function muatSemua() {
     ambil('guru', 'select=' + KOLOM_GURU + '&order=nama'),
     ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
     ambil('kg_mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
-    ambil('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
+    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
     ambil('jabatan', 'select=nama,kategori,aktif&order=urutan'),
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
   ]);
@@ -150,9 +167,9 @@ async function muatSemua() {
   try {
     [D.piket, D.komponen] = await Promise.all([
       ambil('v_guru_piket', 'select=*'),
-      ambil('v_komponen_guru', 'select=*')
+      ambilSemua('v_komponen_guru', 'select=*')
     ]);
-    try { D.piketJadwal = await ambil('v_jadwal_piket', 'select=*'); }
+    try { D.piketJadwal = await ambilSemua('v_jadwal_piket', 'select=*'); }
     catch (e) { D.piketJadwal = []; console.warn('v_jadwal_piket belum ada:', e.message); }
   } catch (e) {
     D.piket = []; D.komponen = [];
@@ -162,7 +179,7 @@ async function muatSemua() {
   // Jadwal KBM beserta daftar jam pelajarannya.
   try {
     [D.jadwal, D.jamPel] = await Promise.all([
-      ambil('v_jadwal', 'select=*'),
+      ambilSemua('v_jadwal', 'select=*'),
       ambil('kg_jam_pelajaran', 'select=*&order=jam_ke')
     ]);
   } catch (e) {
@@ -174,8 +191,8 @@ async function muatSemua() {
   try {
     [D.kelompok, D.anggota, D.belumKelompok, D.dikecualikan] = await Promise.all([
       ambil('v_satuan_jadwal', 'select=*&jenis=eq.Kelompok&order=mapel,nama'),
-      ambil('v_anggota_kelompok', 'select=*'),
-      ambil('v_siswa_belum_berkelompok', 'select=*'),
+      ambilSemua('v_anggota_kelompok', 'select=*'),
+      ambilSemua('v_siswa_belum_berkelompok', 'select=*'),
       ambil('v_pengecualian', 'select=*')
     ]);
   } catch (e) {
