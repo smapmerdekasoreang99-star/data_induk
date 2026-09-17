@@ -36,7 +36,7 @@ let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
           jenis: [], piket: [], komponen: [],
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
-          jadwal: [], jamPel: [], piketJadwal: [] };
+          jadwal: [], jamPel: [], piketJadwal: [], galat: {} };
 let halaman = 'beranda';
 let sel = new Set();
 let ui = { qSiswa: '', kelasSiswa: '', statusSiswa: 'aktif', hal: 1, ukuran: 50,
@@ -145,6 +145,7 @@ async function masuk(petugas, sandi) {
 /* -------------------------------------------------------- muat semua */
 async function muatSemua() {
   if (MODE === 'contoh') { dataContoh(); return; }
+  D.galat = {};
 
   const tahun = await ambil('tahun_ajaran', 'select=kode,mulai,selesai,aktif&order=kode.desc');
   D.tahun = tahun || [];
@@ -173,6 +174,7 @@ async function muatSemua() {
     catch (e) { D.piketJadwal = []; console.warn('v_jadwal_piket belum ada:', e.message); }
   } catch (e) {
     D.piket = []; D.komponen = [];
+    D.galat.piket = e.message;
     console.warn('View piket/komponen belum tersedia:', e.message);
   }
 
@@ -184,6 +186,7 @@ async function muatSemua() {
     ]);
   } catch (e) {
     D.jadwal = []; D.jamPel = [];
+    D.galat.jadwal = e.message;
     console.warn('View jadwal belum tersedia:', e.message);
   }
 
@@ -197,6 +200,7 @@ async function muatSemua() {
     ]);
   } catch (e) {
     D.kelompok = []; D.anggota = []; D.belumKelompok = []; D.dikecualikan = [];
+    D.galat.kelompok = e.message;
     console.warn('View kelompok belajar belum tersedia:', e.message);
   }
   D.mapel = (mapel || []).map(m => ({ id: m.id, nama: m.nama_mapel, rumpun: m.rumpun_mapel }));
@@ -1204,7 +1208,9 @@ const idJadwalBaru = () => 'JD' + Date.now().toString(36).toUpperCase();
 
 function halJadwal() {
   const sudut = ui.jadwalSudut || 'kelas';          // 'kelas' atau 'guru'
-  const smt   = ui.jadwalSemester || 1;
+  // Semester bawaan mengikuti isi datanya, bukan ditebak.
+  const smtAda = [...new Set(D.jadwal.map(j => Number(j.semester)))].sort();
+  const smt = ui.jadwalSemester || smtAda[0] || 1;
   const jamKe = D.jamPel.length ? D.jamPel.map(j => j.jam_ke)
                                 : [...new Set(D.jadwal.map(j => j.jam_ke))].sort((a, b) => a - b);
 
@@ -1241,12 +1247,21 @@ function halJadwal() {
           ${esc(d.nama)}${d.jenis === 'Kelompok' ? ' (kelompok)' : ''}</option>`).join('')}
       </select>
       <select class="field" id="fSemester" style="width:auto">
-        <option value="1" ${smt == 1 ? 'selected' : ''}>Semester 1</option>
-        <option value="2" ${smt == 2 ? 'selected' : ''}>Semester 2</option>
+        ${(smtAda.length ? smtAda : [1, 2]).map(n =>
+          `<option value="${n}" ${smt == n ? 'selected' : ''}>Semester ${n}</option>`).join('')}
       </select>
       <div class="sp" style="flex:1"></div>
       <div class="info kecil">${baris.length} jam per minggu</div>
     </div>
+
+    ${D.galat.jadwal ? `<div class="info-box"><b>Jadwal tidak dapat dibaca.</b>
+      ${esc(D.galat.jadwal)}<br>Kemungkinan berkas <code>33_jadwal_kbm.sql</code> belum dijalankan —
+      tampilan ini bersandar pada view <code>v_jadwal</code> yang dibuat di sana.</div>`
+     : (!D.jadwal.length ? `<div class="info-box"><b>Belum ada jadwal tersimpan.</b>
+        Tabel jadwal terbaca, tetapi isinya kosong untuk tahun ajaran ${esc(sesi.ta)}.</div>`
+     : (!baris.length ? `<div class="info-box">Tidak ada jam pelajaran untuk
+        <b>${esc(pilih)}</b> pada semester ${smt}.
+        ${smtAda.length > 1 ? 'Coba ganti semesternya.' : ''}</div>` : ''))}
 
     <div class="panel"><div class="scroll"><table><thead><tr>
       <th style="width:70px">Jam</th>
@@ -1380,6 +1395,8 @@ function halKelompok() {
       ${kel ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
       <button class="btn" id="bUnduhKelompok">Unduh rekap</button></div>
 
+    ${D.galat.kelompok ? `<div class="info-box"><b>Data kelompok tidak dapat dibaca.</b>
+      ${esc(D.galat.kelompok)}<br>Kemungkinan berkas kelompok belajar belum dijalankan.</div>` : ''}
     ${D.belumKelompok.length ? `<div class="info-box"><b>${D.belumKelompok.length} siswa belum masuk kelompok</b>
       dan belum tercatat pengecualiannya. Sebagian mungkin memang tidak mengikuti program —
       catat pengecualiannya supaya peringatan ini hanya menunjuk yang benar-benar terlewat.
