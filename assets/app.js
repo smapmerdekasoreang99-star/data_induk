@@ -672,7 +672,7 @@ function halGuru() {
           <td class="hide-sm">${g.mapel_utama ? esc(g.mapel_utama) : '<span class="kecil">—</span>'}</td>
           <td class="hide-sm">${g.jenis_ptk ? esc(g.jenis_ptk) : '<span class="kecil">—</span>'}</td>
           <td class="hide-sm">${tglIndo(g.tmt_sekolah)}</td>
-          <td>${tugasGuru(g.id).map(t => `<span class="tag tag-l">${esc(t.jenis)}${t.jabatan ? ' · ' + esc(t.jabatan) : (t.rombel_ref && t.rombel_ref !== '-' ? ' · ' + esc(t.rombel_ref) : '')}</span>`).join(' ') || '<span class="kecil">—</span>'}</td>
+          <td>${tugasGuru(g.id).map(t => `<span class="tag tag-l">${esc(t.jenis)}${t.jabatan ? ' · ' + esc(t.jabatan) : (t.rombel_id ? ' · ' + esc(kodeRombel(t.rombel_id)) : '')}</span>`).join(' ') || '<span class="kecil">—</span>'}</td>
           <td class="act"><button class="btn btn-sm bUbah">Ubah</button>
             <button class="btn btn-sm bTugas">Tugas</button></td></tr>`).join('')
         : `<tr><td colspan="7"><div class="empty"><b>Tidak ada guru yang cocok</b>Ubah pencarian atau saringan.</div></td></tr>`
@@ -966,7 +966,7 @@ function halPiketMatriks() {
     <div class="head"><div><h1>Matriks Jadwal Piket</h1>
       <p>Siapa berjaga pada hari dan jam mana. Jam yang kosong tidak ada petugasnya.</p></div>
       <div class="sp"></div>
-      <button class="btn btn-p" id="bUnduhPiket">Unduh Excel</button></div>
+      <button class="btn" id="bUnduhPiket">Unduh Excel</button></div>
 
     <div class="bar">
       <button class="chip" data-tab="ringkasan">Ringkasan</button>
@@ -984,12 +984,13 @@ function halPiketMatriks() {
           ${jamTeks(j) ? `<div class="kecil" style="font-weight:400">${esc(jamTeks(j))}</div>` : ''}</td>
         ${pakai.map(h => {
           const isi = sel(h, j);
-          if (!isi.length) return '<td style="background:#F7FAF9"></td>';
-          return `<td style="vertical-align:top">${isi.map(p => `
+          return `<td class="sel-piket" data-hari="${h}" data-jam="${j}"
+                   style="vertical-align:top;cursor:pointer${isi.length ? '' : ';background:#F7FAF9'}">
+            ${isi.map(p => `
             <div style="margin-bottom:4px">
               <div style="font-size:13px;font-weight:500">${esc(p.guru)}</div>
               <div class="kecil">${esc(p.dasar)}${p.staf ? ' · tanpa transport' : ''}</div>
-            </div>`).join('')}</td>`;
+            </div>`).join('') || '<div class="kecil" style="text-align:center">+</div>'}</td>`;
         }).join('')}
       </tr>`).join('')
     }</tbody></table></div>
@@ -997,11 +998,66 @@ function halPiketMatriks() {
       ${new Set(data.map(p => p.guru_id)).size} petugas ·
       ${pakai.length} hari</div></div></div>
 
-    <p class="kecil">Sel kosong berarti tidak ada petugas piket pada jam itu.
+    <p class="kecil">Ketuk sel untuk mengatur siapa yang berjaga pada hari dan jam itu.
+      Sel berlatar abu berarti belum ada petugasnya.
       Keterangan di bawah nama menunjukkan atas dasar apa ia berjaga.</p>`}`;
 
   $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
   if ($('#bUnduhPiket')) $('#bUnduhPiket').onclick = () => unduhPiketXlsx(pakai, jamKe, sel, jamTeks);
+  $$('.sel-piket').forEach(td => td.onclick = () =>
+    dialogPiketSel(td.dataset.hari, +td.dataset.jam));
+}
+
+/* Mengatur petugas pada satu hari dan jam: menambah atau mengeluarkan. */
+function dialogPiketSel(hari, jamKe) {
+  const isi = (D.piketJadwal || []).filter(p => p.hari === hari && p.jam_ke === jamKe);
+  const sudah = new Set(isi.map(p => p.guru_id));
+  const calon = D.guru.filter(g => g.status_aktif === 'Aktif' && !sudah.has(g.id))
+                      .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+
+  bukaModal(`<h2>Piket ${esc(hari)} jam ke-${jamKe}</h2><div class="body">
+    ${isi.length ? `<p class="msg kecil">Yang berjaga sekarang:</p>
+      <table class="log"><tbody>${isi.map(p => `<tr>
+        <td style="font-weight:500">${esc(p.guru)}</td>
+        <td class="kecil">${esc(p.dasar)}</td>
+        <td style="text-align:right"><button class="btn btn-sm btn-d"
+          data-keluar="${esc(p.id)}">Keluarkan</button></td></tr>`).join('')}</tbody></table>`
+     : '<p class="msg kecil">Belum ada petugas pada jam ini.</p>'}
+
+    <div class="fg" style="margin-top:14px"><label>Tambahkan petugas</label>
+      <select class="field" id="pTambah">
+        <option value="">— pilih guru —</option>
+        ${calon.map(g => `<option value="${esc(g.id)}">${esc(g.nama)}</option>`).join('')}
+      </select>
+      <div class="hint">Guru yang sudah berjaga pada jam ini tidak ditampilkan.</div></div>
+    </div>
+    <div class="aksi"><button class="btn" id="m-batal">Tutup</button>
+      <button class="btn btn-p" id="m-tambah">Tambahkan</button></div>`);
+
+  $('#m-batal').onclick = tutupModal;
+  $$('[data-keluar]').forEach(b => b.onclick = () => {
+    const id = b.dataset.keluar;
+    tutupModal();
+    jalankan('Menyimpan…', async () => {
+      if (MODE === 'db') await buang('kg_piket', `id=eq.${enc(id)}`);
+      D.piketJadwal = D.piketJadwal.filter(p => String(p.id) !== String(id));
+      if (MODE === 'db') await muatSemua();
+      toast('Petugas dikeluarkan');
+    });
+  });
+  $('#m-tambah').onclick = () => {
+    const guruId = $('#pTambah').value;
+    if (!guruId) { $('#pTambah').focus(); return; }
+    tutupModal();
+    jalankan('Menyimpan…', async () => {
+      if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
+      await simpanBaru('kg_piket', {
+        id: 'PK' + Date.now().toString(36).toUpperCase(),
+        guru_id: guruId, hari: hari, jam_ke: jamKe });
+      await muatSemua();
+      toast('Petugas ditambahkan');
+    });
+  };
 }
 
 /* Berkas Excel berkop, memakai ExcelJS supaya logo dan penggabungan sel
@@ -1587,7 +1643,8 @@ function formKomponen(x) {
 function halKelas() {
   const jml = kode => D.siswa.filter(s => s.kelas === kode && s.status === 'aktif').length;
   const wali = kode => {
-    const t = D.tugas.find(x => x.jenis === 'Wali Kelas' && x.aktif && x.rombel_ref === kode);
+    const r = D.rombel.find(x => x.kode === kode);
+    const t = r && D.tugas.find(x => x.jenis === 'Wali Kelas' && x.aktif && x.rombel_id === r.id);
     return t ? namaGuru(t.guru_id) : '';
   };
   const belum = D.siswa.filter(s => s.status === 'aktif' && !s.kelas);
@@ -2181,9 +2238,11 @@ function unduhCadangan() {
   tambah('Siswa', kolomSiswa(), D.siswa);
   tambah('Guru', kolomGuru(), D.guru);
   tambah('Rombel', [['Kode', 'kode'], ['Tingkat', 'tingkat'], ['Tahun Ajaran', 'tahun_ajaran']], D.rombel);
-  tambah('Tugas', [['Guru', 'namaGuru'], ['ID Guru', 'guru_id'], ['Jenis', 'jenis'], ['Kelas', 'rombel_ref'],
-                   ['Jabatan', 'jabatan'], ['Mulai', 'mulai'], ['Aktif', 'aktif'], ['Tahun Ajaran', 'tahun_ajaran']],
-         D.tugas.map(t => ({ ...t, namaGuru: namaGuru(t.guru_id) })));
+  tambah('Tugas', [['Guru', 'namaGuru'], ['ID Guru', 'guru_id'], ['Jenis', 'jenis'], ['Kelas', 'kelas'],
+                   ['Jabatan', 'jabatan'], ['Jam tambahan mengajar', 'jam_tambahan_mengajar'],
+                   ['Jam piket unit', 'jam_piket_unit'], ['Mulai', 'mulai'], ['Aktif', 'aktif'],
+                   ['Tahun Ajaran', 'tahun_ajaran']],
+         D.tugas.map(t => ({ ...t, namaGuru: namaGuru(t.guru_id), kelas: kodeRombel(t.rombel_id) })));
   tambah('Mapel', [['Nama', 'nama'], ['Kelompok', 'kelompok'], ['Aktif', 'aktif']], D.mapel);
   tambah('TahunAjaran', [['Kode', 'kode'], ['Mulai', 'mulai'], ['Selesai', 'selesai'], ['Aktif', 'aktif']], D.tahun);
   XLSX.writeFile(wb, `Cadangan_Data_Induk_SMAPM_${stempel()}.xlsx`);
