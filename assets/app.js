@@ -1288,8 +1288,8 @@ function halJadwal() {
           ${HARI.map(h => {
             const prog = kunci(h, jk);
             if (prog) return `<td style="background:#EDF5F3;text-align:center;vertical-align:middle">
-              <div style="font-size:12.5px;font-weight:500;color:var(--primary)">Kelompok ${esc(prog)}</div>
-              <div class="kecil">tiap siswa ke kelompoknya</div></td>`;
+              <div style="font-size:12.5px;font-weight:500;color:var(--primary)">${esc(prog)}</div>
+              <div class="kecil">berdasarkan kelompoknya</div></td>`;
             const isi = sel(h, jk);
             if (!isi.length) return `<td class="sel-jadwal" data-hari="${h}" data-jam="${jk}"
               style="cursor:pointer;color:var(--ink3);text-align:center">+</td>`;
@@ -1370,7 +1370,14 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
                      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } }
       });
       const kolomAkhir = hariAda.length + 1;
-      ws.columns = [{ width: 11 }, ...hariAda.map(() => ({ width: 21 }))];
+      // Kolom dilebarkan supaya nama guru yang panjang tidak pecah
+      // menjadi tiga baris. Lebar disesuaikan dengan nama terpanjang
+      // pada lembar ini, dibatasi agar tetap muat sehalaman.
+      const terpanjang = Math.max(14, ...baris.map(j =>
+        Math.max(String(sudut === 'kelas' ? j.mapel : j.kelas).length,
+                 String(sudut === 'kelas' ? j.guru : j.mapel).length)));
+      const lebarHari = Math.min(30, Math.max(24, terpanjang + 3));
+      ws.columns = [{ width: 11 }, ...hariAda.map(() => ({ width: lebarHari }))];
 
       if (logoId !== null) ws.addImage(logoId, { tl: { col: 0.2, row: 0.15 }, ext: { width: 62, height: 62 } });
 
@@ -1427,8 +1434,13 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
           const isi = baris.filter(j => j.hari === h && j.jam_ke === jk);
 
           if (prog) {
-            c.value = `Kelompok ${prog}`;
-            c.font = { size: 10, italic: true, color: { argb: 'FF0F6E5C' } };
+            c.value = {
+              richText: [
+                { text: prog + '\n', font: { bold: true, size: 10.5, color: { argb: 'FF0F6E5C' } } },
+                { text: 'berdasarkan kelompoknya',
+                  font: { size: 8.5, italic: true, color: { argb: 'FF48606A' } } }
+              ]
+            };
             c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDF5F3' } };
           } else if (isi.length) {
             c.value = {
@@ -1456,7 +1468,7 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
         });
         const terbanyak = Math.max(1, ...hariAda.map(h =>
           baris.filter(j => j.hari === h && j.jam_ke === jk).length));
-        br.height = Math.max(32, terbanyak * 28);
+        br.height = Math.max(30, terbanyak * 26);
         r++;
       });
 
