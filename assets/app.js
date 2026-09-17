@@ -26,7 +26,8 @@ const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
 let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
           jenis: [], piket: [], komponen: [],
-          kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [] };
+          kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
+          jadwal: [], jamPel: [] };
 let halaman = 'beranda';
 let sel = new Set();
 let ui = { qSiswa: '', kelasSiswa: '', statusSiswa: 'aktif', hal: 1, ukuran: 50,
@@ -145,6 +146,17 @@ async function muatSemua() {
   } catch (e) {
     D.piket = []; D.komponen = [];
     console.warn('View piket/komponen belum tersedia:', e.message);
+  }
+
+  // Jadwal KBM beserta daftar jam pelajarannya.
+  try {
+    [D.jadwal, D.jamPel] = await Promise.all([
+      ambil('v_jadwal', 'select=*'),
+      ambil('kg_jam_pelajaran', 'select=*&order=jam_ke')
+    ]);
+  } catch (e) {
+    D.jadwal = []; D.jamPel = [];
+    console.warn('View jadwal belum tersedia:', e.message);
   }
 
   // Kelompok belajar: Tahsin, Matematika Dasar, dan sejenisnya.
@@ -320,7 +332,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal()
 /* Formulir umum.
    kolom: [{k, label, tipe:'teks|angka|tanggal|pilih|panjang', opsi:[{v,t}],
             wajib, hint, bila:(nilai)=>bool, pemicu:true}]            */
-function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan }) {
+function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus }) {
   const isi = { ...nilai };
 
   const gambarKolom = () => kolom.filter(k => !k.bila || k.bila(isi)).map(k => {
@@ -357,10 +369,16 @@ function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan }) {
   bukaModal(`<h2>${esc(judul)}</h2><div class="body">
       ${catatan ? `<p class="msg kecil">${esc(catatan)}</p>` : ''}
       <div id="form-isi">${gambarKolom()}</div></div>
-    <div class="aksi"><button class="btn" id="m-batal">Batal</button>
-    <button class="btn btn-p" id="m-simpan">Simpan</button></div>`, lebar);
+    <div class="aksi">
+      ${hapus ? '<button class="btn btn-d" id="m-hapus">Hapus</button><div style="flex:1"></div>' : ''}
+      <button class="btn" id="m-batal">Batal</button>
+      <button class="btn btn-p" id="m-simpan">Simpan</button></div>`, lebar);
   pasang();
   $('#m-batal').onclick = tutupModal;
+  if (hapus) $('#m-hapus').onclick = () => {
+    tutupModal();
+    konfirmasi({ judul: 'Hapus', pesan: 'Data ini akan dihapus. Lanjutkan?', lanjut: hapus });
+  };
   $('#m-simpan').onclick = async () => {
     $$('#modal-root .fg').forEach(f => { f.classList.remove('bad'); const e = $('.err', f); if (e) e.remove(); });
     let ok = true;
@@ -435,7 +453,7 @@ function layarUtama() {
 function gambar() {
   if (!$('#isi')) return;
   ({ beranda: halBeranda, siswa: halSiswa, guru: halGuru, tugas: halTugas,
-     kelas: halKelas, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, tahun: halTahun }[halaman] || halBeranda)();
+     kelas: halKelas, jadwal: halJadwal, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, tahun: halTahun }[halaman] || halBeranda)();
   gambarSelbar();
 }
 
@@ -913,6 +931,165 @@ function akhiriTugas(t) {
 }
 
 
+
+
+/* ---------------------------------------------------------- jadwal */
+const HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const idJadwalBaru = () => 'JD' + Date.now().toString(36).toUpperCase();
+
+function halJadwal() {
+  const sudut = ui.jadwalSudut || 'kelas';          // 'kelas' atau 'guru'
+  const smt   = ui.jadwalSemester || 1;
+  const jamKe = D.jamPel.length ? D.jamPel.map(j => j.jam_ke)
+                                : [...new Set(D.jadwal.map(j => j.jam_ke))].sort((a, b) => a - b);
+
+  // daftar pilihan sesuai sudut pandang
+  const daftar = sudut === 'kelas'
+    ? [...new Map(D.jadwal.map(j => [j.kelas_id, { id: j.kelas_id, nama: j.kelas, jenis: j.jenis_kelas }])).values()]
+        .concat(D.rombel.filter(r => !D.jadwal.some(j => j.kelas === r.kode))
+                        .map(r => ({ id: null, nama: r.kode, jenis: 'Rombel' })))
+        .sort((a, b) => a.nama.localeCompare(b.nama, 'id', { numeric: true }))
+    : D.guru.filter(g => g.status_aktif === 'Aktif')
+            .map(g => ({ id: g.id, nama: g.nama, jenis: '' }))
+            .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+
+  const pilih = ui.jadwalPilih || (daftar[0] && daftar[0].nama) || '';
+  const baris = D.jadwal.filter(j => j.semester == smt &&
+    (sudut === 'kelas' ? j.kelas === pilih : j.guru === pilih));
+
+  const sel = (hari, jam) => baris.filter(j => j.hari === hari && j.jam_ke === jam);
+  const jam = D.jamPel.find(x => true);
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Jadwal KBM</h1>
+      <p>Disunting di sini; aplikasi Kehadiran Guru hanya membacanya.
+         Tahun ajaran ${esc(sesi.ta)}, semester ${smt}.</p></div>
+      <div class="sp"></div>
+      <button class="btn" id="bUnduhJadwal">Unduh jadwal</button></div>
+
+    <div class="bar">
+      <button class="chip ${sudut === 'kelas' ? 'on' : ''}" data-sudut="kelas">Per kelas</button>
+      <button class="chip ${sudut === 'guru' ? 'on' : ''}" data-sudut="guru">Per guru</button>
+      <div style="width:12px"></div>
+      <select class="field" id="fPilih" style="width:auto;min-width:220px">
+        ${daftar.map(d => `<option value="${esc(d.nama)}" ${d.nama === pilih ? 'selected' : ''}>
+          ${esc(d.nama)}${d.jenis === 'Kelompok' ? ' (kelompok)' : ''}</option>`).join('')}
+      </select>
+      <select class="field" id="fSemester" style="width:auto">
+        <option value="1" ${smt == 1 ? 'selected' : ''}>Semester 1</option>
+        <option value="2" ${smt == 2 ? 'selected' : ''}>Semester 2</option>
+      </select>
+      <div class="sp" style="flex:1"></div>
+      <div class="info kecil">${baris.length} jam per minggu</div>
+    </div>
+
+    <div class="panel"><div class="scroll"><table><thead><tr>
+      <th style="width:70px">Jam</th>
+      ${HARI.map(h => `<th>${h}</th>`).join('')}
+    </tr></thead><tbody>${
+      jamKe.map(jk => {
+        const jp = D.jamPel.find(x => x.jam_ke === jk);
+        return `<tr>
+          <td class="kecil" style="font-weight:600">${jk}
+            ${jp && jp.mulai ? `<div class="kecil" style="font-weight:400">${String(jp.mulai).slice(0,5)}</div>` : ''}</td>
+          ${HARI.map(h => {
+            const isi = sel(h, jk);
+            if (!isi.length) return `<td class="sel-jadwal" data-hari="${h}" data-jam="${jk}"
+              style="cursor:pointer;color:var(--ink3);text-align:center">+</td>`;
+            return `<td class="sel-jadwal" data-hari="${h}" data-jam="${jk}">
+              ${isi.map(j => `<div data-jid="${esc(j.id)}" style="cursor:pointer;margin-bottom:3px">
+                <div style="font-weight:500;font-size:13px">${esc(sudut === 'kelas' ? j.mapel : j.kelas)}</div>
+                <div class="kecil">${esc(sudut === 'kelas' ? j.guru : j.mapel)}</div></div>`).join('')}
+              ${isi.length > 1 ? '<div class="kecil" style="color:var(--warn)">beregu</div>' : ''}</td>`;
+          }).join('')}
+        </tr>`;
+      }).join('')
+    }</tbody></table></div></div>
+
+    <p class="kecil">Ketuk sel kosong untuk menambah, atau ketuk isinya untuk mengubah dan menghapus.
+      Satu sel boleh berisi lebih dari satu guru pada kelompok Tahsin dan Matematika Dasar —
+      itu pengajaran beregu, bukan bentrokan.</p>`;
+
+  $$('[data-sudut]').forEach(b => b.onclick = () => {
+    ui.jadwalSudut = b.dataset.sudut; ui.jadwalPilih = null; gambar();
+  });
+  $('#fPilih').onchange = e => { ui.jadwalPilih = e.target.value; gambar(); };
+  $('#fSemester').onchange = e => { ui.jadwalSemester = +e.target.value; gambar(); };
+  $('#bUnduhJadwal').onclick = () => unduhTabel('Jadwal_KBM',
+    [['Kelas', 'kelas'], ['Hari', 'hari'], ['Jam ke', 'jam_ke'], ['Mata pelajaran', 'mapel'],
+     ['Guru', 'guru'], ['Semester', 'semester']],
+    D.jadwal.filter(j => j.semester == smt));
+
+  $('tbody').onclick = e => {
+    const kotak = e.target.closest('[data-jid]');
+    if (kotak) { formJadwal(D.jadwal.find(j => String(j.id) === kotak.dataset.jid)); return; }
+    const td = e.target.closest('.sel-jadwal');
+    if (td) formJadwal(null, td.dataset.hari, +td.dataset.jam, sudut, pilih, smt);
+  };
+}
+
+function formJadwal(j, hari, jamKe, sudut, pilih, smt) {
+  const baru = !j;
+  const kelasPilihan = [
+    ...D.rombel.map(r => ({ v: r.kode, t: r.kode })),
+    ...D.kelompok.map(k => ({ v: k.nama, t: k.nama + ' (kelompok)' }))
+  ];
+  const awal = baru
+    ? { hari, jam_ke: jamKe, semester: smt,
+        kelas: sudut === 'kelas' ? pilih : '', guru: sudut === 'guru' ? pilih : '' }
+    : { ...j };
+
+  formulir({
+    judul: baru ? 'Tambah jam pelajaran' : 'Ubah jam pelajaran',
+    lebar: true,
+    catatan: baru ? '' : 'Mengubah jam atau hari akan diperiksa ulang terhadap jadwal guru dan kelas.',
+    nilai: awal,
+    kolom: [
+      { k: 'kelas', label: 'Kelas atau kelompok', tipe: 'pilih', wajib: true,
+        opsi: [{ v: '', t: '— pilih —' }, ...kelasPilihan] },
+      { k: 'mapel', label: 'Mata pelajaran', tipe: 'pilih', wajib: true,
+        opsi: [{ v: '', t: '— pilih —' }, ...D.mapel.map(m => ({ v: m.nama, t: m.nama }))] },
+      { k: 'guru', label: 'Guru', tipe: 'pilih', wajib: true,
+        opsi: [{ v: '', t: '— pilih —' },
+               ...D.guru.filter(g => g.status_aktif === 'Aktif').map(g => ({ v: g.nama, t: g.nama }))] },
+      { k: 'hari', label: 'Hari', tipe: 'pilih', wajib: true,
+        opsi: HARI.map(h => ({ v: h, t: h })) },
+      { k: 'jam_ke', label: 'Jam ke', tipe: 'pilih', wajib: true,
+        opsi: (D.jamPel.length ? D.jamPel.map(x => x.jam_ke) : [1,2,3,4,5,6,7,8,9,10])
+              .map(n => ({ v: n, t: 'Jam ke-' + n })) },
+      { k: 'semester', label: 'Semester', tipe: 'pilih',
+        opsi: [{ v: 1, t: 'Semester 1' }, { v: 2, t: 'Semester 2' }] }
+    ],
+    simpan: async n => {
+      const kelas = D.kelompok.find(k => k.nama === n.kelas)
+                 || D.rombel.find(r => r.kode === n.kelas);
+      const kelasId = kelas ? (kelas.id || null) : null;
+      const mapel = D.mapel.find(m => m.nama === n.mapel);
+      const guru  = D.guru.find(g => g.nama === n.guru);
+      if (!kelasId) throw new Error('Kelas "' + n.kelas + '" belum terdaftar sebagai satuan jadwal.');
+      if (!mapel)   throw new Error('Mata pelajaran tidak dikenal.');
+      if (!guru)    throw new Error('Guru tidak dikenal.');
+
+      const isi = { hari: n.hari, jam_ke: Number(n.jam_ke), kelas_id: kelasId,
+                    mapel_id: mapel.id, guru_id: guru.id,
+                    tahun_ajaran: sesi.ta, semester: Number(n.semester),
+                    updated_at: new Date().toISOString() };
+
+      if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
+      if (j) await perbarui('kg_jadwal_kbm', `id=eq.${enc(j.id)}`, isi);
+      else   await simpanBaru('kg_jadwal_kbm',
+                { id: idJadwalBaru(), ...isi, created_at: new Date().toISOString() });
+      await muatSemua();
+      toast(j ? 'Jam pelajaran diperbarui' : 'Jam pelajaran ditambahkan');
+    },
+    hapus: j ? async () => {
+      if (MODE === 'db') await buang('kg_jadwal_kbm', `id=eq.${enc(j.id)}`);
+      D.jadwal = D.jadwal.filter(x => x.id !== j.id);
+      if (MODE === 'db') await muatSemua();
+      toast('Jam pelajaran dihapus');
+    } : null
+  });
+}
 
 /* ------------------------------------------------- kelompok belajar */
 function halKelompok() {
