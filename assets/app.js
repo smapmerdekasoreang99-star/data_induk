@@ -7,8 +7,8 @@
    tampilan bisa dicoba dengan data karangan, tanpa menyentuh database.
    ===================================================================== */
 const KONFIG = {
-  url:     '',                                 // https://xxxxx.supabase.co
-  anonKey: '',                                 // Settings > API > anon public
+  url:     'https://xgtoneyvzfvfbidicotq.supabase.co',                                 // https://xxxxx.supabase.co
+  anonKey: 'sb_publishable_rjHVGT0ULc03TC2ljIytSA_2X54xzR1',                                 // Settings > API > anon public
   akun:    'operator@smapmerdeka.sch.id',      // akun bersama
   sekolah: 'SMA Plus Merdeka Soreang'
 };
@@ -1473,24 +1473,65 @@ function halJabatan() {
           <td><span class="tag tag-l">${esc(j.kategori)}</span></td>
           <td class="num">${dipakai(j.nama)} guru</td>
           <td>${j.aktif === false ? '<span class="kecil">nonaktif</span>' : 'aktif'}</td>
-          <td class="act"><button class="btn btn-sm bUbah">Ubah</button></td></tr>`).join('')
+          <td class="act"><button class="btn btn-sm bUbah">Ubah</button>
+            ${dipakai(j.nama)
+                ? (j.aktif === false ? '' : ' <button class="btn btn-sm bNonaktif">Nonaktifkan</button>')
+                : ' <button class="btn btn-sm btn-d bHapus">Hapus</button>'}</td></tr>`).join('')
         || `<tr><td colspan="5"><div class="empty"><b>Belum ada jabatan</b></div></td></tr>`
       }</tbody></table></div></div>`;
 
   $('#bTambah').onclick = () => formJabatan(null);
   $('tbody').onclick = e => {
     const tr = e.target.closest('tr[data-nama]'); if (!tr) return;
-    if (e.target.classList.contains('bUbah')) formJabatan(D.jabatan.find(x => x.nama === tr.dataset.nama));
+    const jb = D.jabatan.find(x => x.nama === tr.dataset.nama);
+    if (e.target.classList.contains('bUbah')) formJabatan(jb);
+    else if (e.target.classList.contains('bHapus')) konfirmasi({
+      judul: 'Hapus jabatan',
+      pesan: `Hapus <b>${esc(jb.nama)}</b> dari daftar pilihan? Belum dipegang siapa pun, jadi tidak ada tugas yang terpengaruh.`,
+      lanjut: async () => {
+        if (MODE === 'db') await buang('jabatan', `nama=eq.${enc(jb.nama)}`);
+        D.jabatan = D.jabatan.filter(x => x.nama !== jb.nama);
+        if (MODE === 'db') await muatSemua();
+        toast(jb.nama + ' dihapus');
+      }
+    });
+    else if (e.target.classList.contains('bNonaktif')) konfirmasi({
+      judul: 'Nonaktifkan jabatan', bahaya: false, tombol: 'Nonaktifkan',
+      pesan: `<b>${esc(jb.nama)}</b> sudah dipegang ${dipakai(jb.nama)} guru, jadi tidak bisa dihapus —
+              menghapusnya akan memutus catatan tugas yang sudah ada.<br><br>
+              Sebagai gantinya jabatan ini ditandai nonaktif: tidak lagi muncul sebagai pilihan
+              saat mencatat tugas baru, sedangkan tugas yang sudah ada tetap utuh.`,
+      lanjut: async () => {
+        if (MODE === 'db') await perbarui('jabatan', `nama=eq.${enc(jb.nama)}`, { aktif: false });
+        jb.aktif = false;
+        if (MODE === 'db') await muatSemua();
+        toast(jb.nama + ' ditandai nonaktif');
+      }
+    });
   };
 }
 
 function formJabatan(j) {
+  const dipakai = j ? D.tugas.filter(t => t.jabatan === j.nama && t.aktif).length : 0;
   formulir({
     judul: j ? 'Ubah jabatan' : 'Tambah jabatan',
+    hapus: j ? async () => {
+      if (dipakai) throw new Error(
+        `${j.nama} masih dipegang ${dipakai} guru, jadi tidak bisa dihapus. ` +
+        'Ubah statusnya menjadi nonaktif supaya tidak muncul lagi di pilihan, ' +
+        'sementara tugas yang terlanjur memakainya tetap utuh.');
+      if (MODE === 'db') await buang('jabatan', `nama=eq.${enc(j.nama)}`);
+      D.jabatan = D.jabatan.filter(x => x.nama !== j.nama);
+      if (MODE === 'db') await muatSemua();
+      toast(j.nama + ' dihapus');
+    } : null,
     nilai: j ? { ...j, aktif: String(j.aktif !== false) } : { kategori: 'Unit', aktif: 'true' },
     kolom: [
       { k: 'nama', label: 'Nama jabatan atau unit', wajib: true,
-        hint: j ? 'Mengubah nama ikut memperbarui tugas yang memakainya.' : 'Contoh: Penanggung Jawab Laboratorium IPA' },
+        hint: j
+          ? (dipakai ? `Sedang dipegang ${dipakai} guru. Mengubah namanya ikut memperbarui tugas mereka.`
+                     : 'Belum dipegang siapa pun, jadi aman diubah atau dihapus.')
+          : 'Contoh: Penanggung Jawab Laboratorium IPA' },
       { k: 'kategori', label: 'Kategori', tipe: 'pilih',
         opsi: [{ v: 'Struktural', t: 'Struktural — jabatan ber-SK' },
                { v: 'Unit', t: 'Unit — penanggung jawab bidang' }] },
