@@ -1139,7 +1139,15 @@ async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
     });
     const kolomTerakhir = hari.length + 1;
 
-    ws.columns = [{ width: 13 }, ...hari.map(() => ({ width: 26 }))];
+    // Lebar kolom hari mengikuti nama terpanjang yang benar-benar ada
+    // pada jadwal ini, bukan angka tetap — supaya nama guru yang panjang
+    // tidak pecah menjadi tiga baris.
+    const semuaNama = [];
+    hari.forEach(h => jamKe.forEach(j =>
+      sel(h, j).forEach(p => semuaNama.push(p.guru + (p.staf ? ' (staf)' : '')))));
+    const terpanjang = Math.max(18, ...semuaNama.map(n => n.length));
+    const lebarHari = Math.min(34, terpanjang + 2);
+    ws.columns = [{ width: 13 }, ...hari.map(() => ({ width: lebarHari }))];
 
     // Logo di kiri atas, menempati baris 1-2 kolom pertama.
     try {
@@ -1217,7 +1225,7 @@ async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
                      left: { style: 'thin' }, right: { style: 'thin' } };
       });
       const terbanyak = Math.max(1, ...hari.map(h => sel(h, j).length));
-      baris.height = Math.max(24, terbanyak * 15);
+      baris.height = Math.max(22, terbanyak * 14);
       r++;
     });
 
