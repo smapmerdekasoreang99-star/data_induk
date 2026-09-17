@@ -7,8 +7,8 @@
    tampilan bisa dicoba dengan data karangan, tanpa menyentuh database.
    ===================================================================== */
 const KONFIG = {
-  url:     'https://xgtoneyvzfvfbidicotq.supabase.co',                                 // https://xxxxx.supabase.co
-  anonKey: 'sb_publishable_rjHVGT0ULc03TC2ljIytSA_2X54xzR1',                                 // Settings > API > anon public
+  url:     '',                                 // https://xxxxx.supabase.co
+  anonKey: '',                                 // Settings > API > anon public
   akun:    'operator@smapmerdeka.sch.id',      // akun bersama
   sekolah: 'SMA Plus Merdeka Soreang'
 };
@@ -876,9 +876,14 @@ function formTugas(t) {
 
       { k: 'jabatan', label: 'Jabatan / unit', tipe: 'pilih', wajib: true,
         bila: n => sifat(n.jenis, 'perlu_jabatan'),
-        opsi: [{ v: '', t: '— pilih jabatan —' },
-               ...D.jabatan.filter(j => j.aktif !== false).map(j => ({ v: j.nama, t: `${j.nama} (${j.kategori})` }))],
-        hint: 'Belum ada di daftar? Tambahkan lebih dulu lewat halaman Jabatan.' },
+        opsi: [{ v: '', t: D.jabatan.length ? '— pilih jabatan —' : '— daftar jabatan masih kosong —' },
+               // jabatan yang sedang dipakai baris ini tetap ditampilkan,
+               // walaupun sudah ditandai nonaktif
+               ...D.jabatan.filter(j => j.aktif !== false || j.nama === awal.jabatan)
+                           .map(j => ({ v: j.nama, t: `${j.nama} (${j.kategori})` }))],
+        hint: D.jabatan.length
+          ? 'Belum ada di daftar? Tambahkan lewat halaman Jabatan & Unit, daftar ini langsung ikut terbarui.'
+          : 'Daftar jabatan masih kosong. Isi lebih dulu lewat halaman Jabatan & Unit.' },
 
       { k: 'jam_tambahan_mengajar', label: 'Jam tambahan mengajar per minggu', tipe: 'angka', wajib: true,
         bila: n => sifat(n.jenis, 'tambah_jam_mengajar'),
@@ -1442,9 +1447,9 @@ function formMapel(m) {
         Object.assign(m, { nama: isi.nama_mapel, rumpun: isi.rumpun_mapel });
       } else {
         if (D.mapel.some(x => x.id === n.id.trim())) throw new Error('Kode ' + n.id + ' sudah dipakai.');
-        const d = await simpanBaru('kg_mapel', { id: n.id.trim(), ...isi });
-        D.mapel.push({ id: d[0].id, nama: d[0].nama_mapel, rumpun: d[0].rumpun_mapel });
+        await simpanBaru('kg_mapel', { id: n.id.trim(), ...isi });
       }
+      if (MODE === 'db') await muatSemua();
       D.mapel.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
       toast('Tersimpan');
     }
@@ -1500,9 +1505,11 @@ function formJabatan(j) {
         await perbarui('jabatan', `nama=eq.${enc(j.nama)}`, isi);
         Object.assign(j, isi);
       } else {
-        const d = await simpanBaru('jabatan', isi);
-        D.jabatan.push(d[0]);
+        await simpanBaru('jabatan', isi);
       }
+      // Muat ulang dari database supaya daftar pilihan di halaman lain
+      // — terutama formulir Tugas Guru — ikut terbarui.
+      if (MODE === 'db') await muatSemua();
       toast('Tersimpan');
     }
   });
