@@ -7,8 +7,8 @@
    tampilan bisa dicoba dengan data karangan, tanpa menyentuh database.
    ===================================================================== */
 const KONFIG = {
-  url:     'https://xgtoneyvzfvfbidicotq.supabase.co',                                 // https://xxxxx.supabase.co
-  anonKey: 'sb_publishable_rjHVGT0ULc03TC2ljIytSA_2X54xzR1',                                 // Settings > API > anon public
+  url:     '',                                 // https://xxxxx.supabase.co
+  anonKey: '',                                 // Settings > API > anon public
   akun:    'operator@smapmerdeka.sch.id',      // akun bersama
   sekolah: 'SMA Plus Merdeka Soreang'
 };
@@ -585,7 +585,8 @@ function halSiswa() {
       <div class="sp"></div>
       <button class="btn btn-p" id="bTambah">+ Tambah siswa</button>
       <button class="btn" id="bUnggah">Unggah berkas</button>
-      <button class="btn" id="bUnduh">Unduh</button></div>
+      <button class="btn" id="bUnduh">Unduh Data (xlsx)</button>
+      <button class="btn" id="bUnduhAbsen">Unduh Absen (xlsx)</button></div>
     <div class="bar">
       <div class="grow"><input class="field" id="q" placeholder="Cari nama, NISN, atau NIS…" value="${esc(ui.qSiswa)}"></div>
       <select class="field" id="fStatus" style="width:auto">
@@ -632,6 +633,18 @@ function halSiswa() {
   $$('[data-kelas]').forEach(b => b.onclick = () => { ui.kelasSiswa = b.dataset.kelas; ui.hal = 1; gambar(); });
   $('#bTambah').onclick = () => formSiswa(null);
   $('#bUnggah').onclick = () => pilihBerkas(m => imporSiswa(m));
+  $('#bUnduhAbsen').onclick = () => {
+    const per = new Map();
+    siswaTersaring().filter(x => x.status === 'aktif').forEach(x => {
+      const k = x.kelas || '(tanpa kelas)';
+      if (!per.has(k)) per.set(k, []);
+      per.get(k).push(x);
+    });
+    [...per.values()].forEach(a => a.sort((x, y) => x.nama.localeCompare(y.nama, 'id')));
+    unduhAbsenXlsx('Daftar Hadir Tatap Muka',
+      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: '' },
+      new Map([...per.entries()].sort()), '');
+  };
   $('#bUnduh').onclick = () => unduhTabel('Daftar Siswa', kolomSiswa(), siswaTersaring(),
     `Tahun Pelajaran ${sesi.ta}` + (ui.kelasSiswa ? `  ·  Kelas ${ui.kelasSiswa}` : ''));
   $('#cbAll').onchange = e => { laman.forEach(s => e.target.checked ? sel.add(s.id) : sel.delete(s.id)); gambar(); };
@@ -693,6 +706,114 @@ function hapusSiswa(ids) {
   });
 }
 
+
+/* Daftar hadir kosong untuk diisi manual, mengikuti bentuk yang sudah
+   dipakai sekolah: kop, keterangan kelas dan pengajar, lalu kolom
+   pertemuan ke-1 sampai ke-20 yang dibiarkan kosong. */
+async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
+  const isiTotal = [...kelompokSiswa.values()].reduce((a, b) => a + b.length, 0);
+  if (!isiTotal) return toast('Tidak ada siswa untuk dibuatkan daftar hadir.', true);
+
+  await jalankan('Menyiapkan daftar hadir…', async () => {
+    const ExcelJS = await muatExcelJS();
+    const wb = new ExcelJS.Workbook();
+    const PERTEMUAN = 20;
+
+    for (const [namaKelas, siswa] of kelompokSiswa) {
+      if (!siswa.length) continue;
+      const ws = wb.addWorksheet(namaKelas.replace(/[\\\/?*\[\]:]/g, '-').slice(0, 31), {
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } }
+      });
+      const kolomAkhir = 4 + PERTEMUAN;
+      ws.columns = [{ width: 4.5 }, { width: 32 }, { width: 5 }, { width: 8 },
+                    ...Array.from({ length: PERTEMUAN }, () => ({ width: 3.4 }))];
+
+      const tengah = (r, t, u, tb) => {
+        ws.mergeCells(r, 1, r, kolomAkhir);
+        const c = ws.getCell(r, 1);
+        c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+      };
+      tengah(1, judulAbsen.toUpperCase(), 13, true);
+      tengah(2, (SEKOLAH.nama || '').toUpperCase(), 12, true);
+      tengah(3, 'TAHUN PELAJARAN ' + sesi.ta, 10.5, false);
+
+      let r = 5;
+      const isiKet = [[keterangan.labelKelas, namaKelas]]
+        .concat(mapel ? [['Mata Pelajaran', mapel]] : [])
+        .concat([[keterangan.labelGuru, keterangan.nilaiGuru || '……………………………………………']]);
+      isiKet.forEach(function (pasangan) {
+        ws.mergeCells(r, 1, r, 2);
+        ws.getCell(r, 1).value = pasangan[0];
+        ws.getCell(r, 1).font = { size: 10 };
+        ws.mergeCells(r, 3, r, 8);
+        ws.getCell(r, 3).value = ': ' + pasangan[1];
+        ws.getCell(r, 3).font = { size: 10 };
+        r++;
+      });
+      r++;
+
+      const b1 = r, b2 = r + 1;
+      [['No', 1], ['Nama Siswa', 2], ['L/P', 3], ['Kelas', 4]].forEach(function (x) {
+        ws.mergeCells(b1, x[1], b2, x[1]);
+        const c = ws.getCell(b1, x[1]);
+        c.value = x[0];
+        c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      });
+      ws.mergeCells(b1, 5, b1, kolomAkhir);
+      const cp = ws.getCell(b1, 5);
+      cp.value = 'Pertemuan Ke / Tanggal';
+      cp.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+      cp.alignment = { horizontal: 'center', vertical: 'middle' };
+      for (let n = 1; n <= PERTEMUAN; n++) {
+        const c = ws.getCell(b2, 4 + n);
+        c.value = n;
+        c.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+      ws.getRow(b1).height = 20; ws.getRow(b2).height = 16;
+      r = b2 + 1;
+
+      siswa.forEach(function (sw, i) {
+        const br = ws.getRow(r);
+        br.getCell(1).value = i + 1;
+        br.getCell(2).value = sw.nama;
+        br.getCell(3).value = sw.jk || '';
+        br.getCell(4).value = sw.kelas || '';
+        br.getCell(1).alignment = { horizontal: 'center' };
+        br.getCell(3).alignment = { horizontal: 'center' };
+        br.getCell(4).alignment = { horizontal: 'center' };
+        br.getCell(2).font = { size: 10 };
+        br.height = 18;
+        for (let k = 1; k <= kolomAkhir; k++) {
+          const c = ws.getCell(r, k);
+          if (!c.font) c.font = { size: 10 };
+          c.border = { top: { style: 'thin', color: { argb: 'FFBFC9C6' } },
+                       bottom: { style: 'thin', color: { argb: 'FFBFC9C6' } },
+                       left: { style: 'thin', color: { argb: 'FFBFC9C6' } },
+                       right: { style: 'thin', color: { argb: 'FFBFC9C6' } } };
+        }
+        r++;
+      });
+
+      ws.views = [{ state: 'frozen', xSplit: 4, ySplit: b2 }];
+      r = kakiExcel(ws, r + 1, kolomAkhir);
+      ttdExcel(ws, r + 1, kolomAkhir);
+    }
+
+    if (!wb.worksheets.length) throw new Error('Tidak ada daftar hadir yang terbentuk.');
+    const buf = await wb.xlsx.writeBuffer();
+    unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+              judulAbsen.replace(/[^\w]+/g, '_') + '_' + stempel() + '.xlsx');
+    toast(wb.worksheets.length + ' lembar daftar hadir diunduh');
+  });
+}
+
 /* -------------------------------------------------------------- guru */
 function halGuru() {
   const q = ui.qGuru.trim().toLowerCase();
@@ -708,7 +829,7 @@ function halGuru() {
       <div class="sp"></div>
       <button class="btn btn-p" id="bTambah">+ Tambah guru</button>
       <button class="btn" id="bUnggah">Unggah berkas</button>
-      <button class="btn" id="bUnduh">Unduh</button></div>
+      <button class="btn" id="bUnduh">Unduh Data (xlsx)</button></div>
     <div class="bar">
       <div class="grow"><input class="field" id="q" placeholder="Cari nama, NIG, atau mapel…" value="${esc(ui.qGuru)}"></div>
       <select class="field" id="fStatus" style="width:auto">
@@ -1024,7 +1145,7 @@ function halPiketMatriks() {
     <div class="head"><div><h1>Matriks Jadwal Piket</h1>
       <p>Siapa berjaga pada hari dan jam mana. Jam yang kosong tidak ada petugasnya.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bUnduhPiket">Unduh Excel</button></div>
+      <button class="btn" id="bUnduhPiket">Unduh (xlsx)</button></div>
 
     <div class="bar">
       <button class="chip" data-tab="ringkasan">Ringkasan</button>
@@ -1266,7 +1387,7 @@ function halJadwal() {
       <p>Disunting di sini; aplikasi Kehadiran Guru hanya membacanya.
          Tahun ajaran ${esc(sesi.ta)}, semester ${smt}.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bUnduhJadwal">Unduh Excel</button>
+      <button class="btn" id="bUnduhJadwal">Unduh (xlsx)</button>
       <button class="btn" id="bUnduhSemua">Unduh semua kelas</button></div>
 
     <div class="bar">
@@ -1585,7 +1706,8 @@ function halKelompok() {
          Rapornya tetap dikembalikan ke wali kelas rombel masing-masing.</p></div>
       <div class="sp"></div>
       ${kel ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
-      <button class="btn" id="bUnduhKelompok">Unduh rekap</button></div>
+      <button class="btn" id="bUnduhKelompok">Unduh Data (xlsx)</button>
+      ${kel ? '<button class="btn" id="bUnduhAbsenKel">Unduh Absen (xlsx)</button>' : ''}</div>
 
     ${D.galat.kelompok ? `<div class="info-box"><b>Data kelompok tidak dapat dibaca.</b>
       ${esc(D.galat.kelompok)}<br>Kemungkinan berkas kelompok belajar belum dijalankan.</div>` : ''}
@@ -1646,6 +1768,13 @@ function halKelompok() {
   if ($('#bTambahAnggota')) $('#bTambahAnggota').onclick = () => formAnggota(kel);
   if ($('#bLihatBelum')) $('#bLihatBelum').onclick = dialogBelumKelompok;
   $('#bUnduhKelompok').onclick = unduhRekapKelompok;
+  if ($('#bUnduhAbsenKel')) $('#bUnduhAbsenKel').onclick = () => {
+    const daftar = anggota.map(a => ({ nama: a.siswa, kelas: a.rombel || '',
+      jk: (D.siswa.find(s => s.id === a.siswa_id) || {}).jk || '' }));
+    unduhAbsenXlsx('Daftar Hadir ' + (kel.mapel || 'Kelompok Belajar'),
+      { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: '' },
+      new Map([[kel.nama, daftar]]), kel.mapel || '');
+  };
   const tb = $('tbody');
   if (tb) tb.onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
@@ -2549,7 +2678,7 @@ function imporGuru(matrix, namaBerkas) {
 
 /* ------------------------------------------------------------ ekspor */
 const kolomSiswa = () => [['NISN', 'nisn'], ['NIS', 'nis'], ['Nama', 'nama'], ['Kelas', 'kelas'],
-                          ['Jenis Kelamin', 'jk'], ['Tanggal Lahir', 'tgl'], ['Status', 'status']];
+                          ['L/P', 'jk'], ['Tanggal Lahir', 'tgl'], ['Status', 'status']];
 const kolomGuru  = () => [['ID', 'id'], ['NIG', 'nig'], ['Nama', 'nama'], ['Mapel Utama', 'mapel_utama'],
                           ['Jenis PTK', 'jenis_ptk'], ['TMT', 'tmt_sekolah'], ['NUPTK', 'nuptk'],
                           ['No HP', 'no_hp'], ['Status', 'status_aktif']];
@@ -2578,10 +2707,21 @@ async function kopExcel(wb, ws, judul, subjudul, kolomAkhir) {
     ws.addImage(id, { tl: { col: 0.2, row: 0.15 }, ext: { width: 62, height: 62 } });
   } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
 
-  const akhirKol = Math.max(2, kolomAkhir);
+  // Logo selebar kira-kira 9 satuan lebar kolom. Teks kop dimulai pada
+  // kolom pertama yang sudah melewati lebar itu — kalau tidak, pada
+  // tabel berkolom sempit logonya menimpa tulisan.
+  let lebarKumpul = 0, kolomTeks = 2;
+  const daftarLebar = (ws.columns || []).map(k => (k && k.width) || 10);
+  for (let i = 0; i < daftarLebar.length; i++) {
+    lebarKumpul += daftarLebar[i];
+    if (lebarKumpul >= 9.5) { kolomTeks = i + 2; break; }
+  }
+  kolomTeks = Math.min(kolomTeks, Math.max(2, kolomAkhir));
+
+  const akhirKol = Math.max(kolomTeks, kolomAkhir);
   const kiri = (r, t, u, tb) => {
-    ws.mergeCells(r, 2, r, akhirKol);
-    const c = ws.getCell(r, 2);
+    ws.mergeCells(r, kolomTeks, r, akhirKol);
+    const c = ws.getCell(r, kolomTeks);
     c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
     c.alignment = { horizontal: 'left', vertical: 'middle' };
     ws.getRow(r).height = u >= 13 ? 24 : 16;
@@ -2663,7 +2803,7 @@ async function unduhTabel(judul, kolom, data, subjudul) {
     const kolomAkhir = kolom.length + 1;   // + kolom nomor
 
     ws.columns = [{ width: 5 }, ...kolom.map(([judulKolom]) =>
-      ({ width: Math.min(34, Math.max(12, judulKolom.length + 4,
+      ({ width: Math.min(34, Math.max(judulKolom.length <= 4 ? 6 : 12, judulKolom.length + 4,
         ...data.slice(0, 200).map(d => String(d[kolom.find(k => k[0] === judulKolom)[1]] ?? '').length + 2))) }))];
 
     let r = await kopExcel(wb, ws, nama, subjudul ||
