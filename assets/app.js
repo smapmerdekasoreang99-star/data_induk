@@ -1025,7 +1025,8 @@ function halTugas() {
             <td class="num hide-sm">${tglIndo(t.mulai)}</td>
             <td>${t.aktif ? 'aktif' : '<span class="kecil">selesai</span>'}</td>
             <td class="act"><button class="btn btn-sm bUbah">Ubah</button>
-              ${t.aktif ? '<button class="btn btn-sm bSelesai">Akhiri</button>' : ''}</td></tr>`;
+              ${t.aktif ? '<button class="btn btn-sm bSelesai">Akhiri</button>' : ''}
+              <button class="btn btn-sm btn-d bHapusTugas">Hapus</button></td></tr>`;
         }).join('')
         : `<tr><td colspan="7"><div class="empty"><b>Belum ada tugas tercatat</b>Tambahkan lewat tombol di atas.</div></td></tr>`
       }</tbody></table></div></div>`;
@@ -1038,6 +1039,7 @@ function halTugas() {
     const t = D.tugas.find(x => String(x.id) === tr.dataset.id);
     if (e.target.classList.contains('bUbah')) formTugas(t);
     else if (e.target.classList.contains('bSelesai')) akhiriTugas(t);
+    else if (e.target.classList.contains('bHapusTugas')) hapusTugas(t);
   };
 }
 
@@ -1113,11 +1115,44 @@ function formTugas(t) {
   });
 }
 
+/* Menghapus tugas yang salah dicatat. Berbeda dengan Akhiri: yang ini
+   menghilangkan catatannya sama sekali, seolah tidak pernah ada.
+   Dipakai hanya bila tugasnya memang keliru, bukan bila tugasnya
+   berakhir — riwayat yang benar tetap perlu disimpan.                */
+function hapusTugas(t) {
+  const akibat = [];
+  if (t.jenis === 'Staf')
+    akibat.push('guru ini kembali masuk perhitungan honor tambahan: komponen upacara, '
+              + 'bimbingan, dan piketnya akan muncul sebagai belum diisi');
+  if (t.jenis === 'Wali Kelas')
+    akibat.push('rombel ' + (kodeRombel(t.rombel_id) || '—') + ' menjadi tanpa wali kelas');
+  if (t.jenis === 'Diperbantukan')
+    akibat.push('hak transport pada unit ' + (t.jabatan || '—') + ' ikut hilang');
+
+  konfirmasi({
+    judul: 'Hapus tugas',
+    pesan: `Hapus tugas <b>${esc(t.jenis)}</b> untuk <b>${esc(namaGuru(t.guru_id))}</b>?
+            Catatannya hilang sama sekali.
+            <br><br>Bila tugas ini sebenarnya pernah dijalankan lalu berakhir,
+            jangan dihapus — pakai <b>Akhiri</b>, supaya rekap bulan-bulan sebelumnya
+            tidak ikut berubah.
+            ${akibat.length ? '<br><br>Sesudah dihapus: ' + esc(akibat.join('; ')) + '.' : ''}`,
+    tombol: 'Hapus',
+    lanjut: async () => {
+      if (MODE === 'db') await buang('guru_tugas', `id=eq.${enc(t.id)}`);
+      D.tugas = D.tugas.filter(x => x.id !== t.id);
+      if (MODE === 'db') await muatSemua();
+      toast('Tugas dihapus');
+    }
+  });
+}
+
 function akhiriTugas(t) {
   konfirmasi({
     judul: 'Akhiri tugas', bahaya: false, tombol: 'Akhiri',
     pesan: `Tugas <b>${esc(t.jenis)}</b> untuk <b>${esc(namaGuru(t.guru_id))}</b> ditandai selesai.
-            Datanya tetap tersimpan sebagai riwayat, tidak dihapus.`,
+            Datanya tetap tersimpan sebagai riwayat, tidak dihapus.
+            Pakai ini bila tugasnya memang pernah dijalankan lalu berakhir.`,
     lanjut: async () => {
       if (MODE === 'db')
         await perbarui('guru_tugas', `id=eq.${enc(t.id)}`,
