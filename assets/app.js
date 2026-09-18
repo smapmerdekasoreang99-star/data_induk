@@ -641,8 +641,11 @@ function halSiswa() {
       per.get(k).push(x);
     });
     [...per.values()].forEach(a => a.sort((x, y) => x.nama.localeCompare(y.nama, 'id')));
+    // Wali kelas diambil dari tugas guru bila rombelnya tunggal.
+    const kelasTerpilih = [...per.keys()];
+    const wali = kelasTerpilih.length === 1 ? namaWali(kelasTerpilih[0]) : '';
     unduhAbsenXlsx('Daftar Hadir Tatap Muka',
-      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: '' },
+      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: wali },
       new Map([...per.entries()].sort()), '');
   };
   $('#bUnduh').onclick = () => unduhTabel('Daftar Siswa', kolomSiswa(), siswaTersaring(),
@@ -706,6 +709,14 @@ function hapusSiswa(ids) {
   });
 }
 
+
+/* Nama wali kelas suatu rombel, dari tugas guru yang aktif. */
+function namaWali(kodeRombel) {
+  const r = D.rombel.find(x => x.kode === kodeRombel);
+  if (!r) return '';
+  const t = D.tugas.find(x => x.jenis === 'Wali Kelas' && x.aktif && x.rombel_id === r.id);
+  return t ? namaGuru(t.guru_id) : '';
+}
 
 /* Daftar hadir kosong untuk diisi manual, mengikuti bentuk yang sudah
    dipakai sekolah: kop, keterangan kelas dan pengajar, lalu kolom
@@ -1763,8 +1774,14 @@ function halKelompok() {
   if ($('#bUnduhAbsenKel')) $('#bUnduhAbsenKel').onclick = () => {
     const daftar = anggota.map(a => ({ nama: a.siswa, kelas: a.rombel || '',
       jk: (D.siswa.find(s => s.id === a.siswa_id) || {}).jk || '' }));
+    // Pembimbing diambil dari jadwal. Satu kelompok bisa dipegang lebih
+    // dari satu guru — tanggung jawabnya bersama, jadi seluruh namanya
+    // ditulis, bukan dipilih salah satu.
+    const pembimbing = [...new Set(D.jadwal
+      .filter(j => j.kelas === kel.nama)
+      .map(j => j.guru))].sort().join(', ');
     unduhAbsenXlsx('Daftar Hadir ' + (kel.mapel || 'Kelompok Belajar'),
-      { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: '' },
+      { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: pembimbing },
       new Map([[kel.nama, daftar]]), kel.mapel || '');
   };
   const tb = $('tbody');
