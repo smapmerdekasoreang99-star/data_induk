@@ -26,6 +26,14 @@ kalau ragu apakah sudah pernah dijalankan, jalankan saja lagi.
 | 7 | `31_pengecualian_tahsin.sql` | mencatat siswa yang tidak mengikuti Tahsin |
 | 8 | `32_tambah_siswa_baru.sql` | menambahkan Muhammad Zyian |
 | 9 | `33_jadwal_kbm.sql` | pengaman jadwal dan tampilannya |
+| 10 | `34_rls_tabel_baru.sql` | kebijakan akses tabel-tabel baru |
+| 11 | `35_jadwal_piket.sql` | rincian jadwal piket |
+| 12 | `36_jam_dan_piket.sql` | jam ke-11 dan ke-12, hak sunting piket |
+| 13 | `40_perbaiki_kode_tahsin.sql` | mengembalikan kode Tahsin ke M26 |
+| 14 | `41_profil_dokumen.sql` | identitas sekolah untuk kop berkas |
+| 15 | `42` lalu `43` | jenis kelamin siswa |
+| 16 | `44_jenis_kelamin_guru.sql` | jenis kelamin guru — periksa dulu |
+| 17 | `46_rapikan_nama_tabel.sql` | membersihkan tabel impor, merapikan penamaan |
 
 Berkas bernomor `01` sampai `12` adalah tahapan awal yang sudah dilewati atau
 sudah digantikan. `09`, `10`, `14`, `15`, dan `21` **tidak berlaku lagi** —
@@ -101,8 +109,30 @@ Mendapat honor penanggung jawab ditambah transport kedatangan pada jam piket
 unitnya sendiri. Bukan piket meja sekolah.
 
 **Rombel** (18) — rombongan belajar administratif, dasar wali kelas dan rapor.
-**Satuan jadwal** (`kg_kelas`, 39) — yang diajar pada satu jam pelajaran:
+**Satuan jadwal** (`kelas`, 39) — yang diajar pada satu jam pelajaran:
 18 rombel ditambah 21 kelompok Tahsin. Keduanya berbeda fungsi, bukan duplikasi.
+
+### Penamaan tabel
+
+Lima tabel yang dipakai bersama sudah dilepas dari awalan `kg_`:
+
+| Sekarang | Dulu |
+|---|---|
+| `mapel` | `kg_mapel` |
+| `kelas` | `kg_kelas` |
+| `jadwal_kbm` | `kg_jadwal_kbm` |
+| `jam_pelajaran` | `kg_jam_pelajaran` |
+| `piket` | `kg_piket` |
+
+Nama lama masih ada sebagai **view** yang menunjuk tabel yang sama, supaya
+aplikasi Kehadiran Guru tetap berjalan tanpa diubah. Datanya satu, bukan
+salinan. Setelah aplikasi itu dialihkan ke nama baru, kelima view tersebut
+harus dihapus — jangan dibiarkan bertahun-tahun, karena dua nama untuk satu
+benda menyesatkan siapa pun yang membaca database nanti:
+
+```sql
+drop view kg_mapel, kg_kelas, kg_jadwal_kbm, kg_jam_pelajaran, kg_piket;
+```
 
 ---
 
@@ -124,10 +154,13 @@ Supabase versi gratis tidak menyediakan pemulihan otomatis.
 
 ## 4. Yang belum selesai
 
-- Keanggotaan kelompok Matematika Dasar — menunggu daftar dari kurikulum
+- Jenis kelamin: 10 siswa yang kedua daftar hadirnya bertentangan, dan
+  2 guru yang perkiraannya belum pasti
 - Tugas Staf dan Diperbantukan belum ada satu pun tercatat
 - 8 siswa perlu dicatat pengecualian Tahsin-nya (berkas `31`)
-- Aplikasi Kehadiran Guru masih perlu dialihkan ke `v_jadwal` dan
-  `v_guru_piket`, lalu hak tulisnya dicabut
+- Aplikasi Kehadiran Guru masih perlu dialihkan ke nama tabel baru
+  (`jadwal_kbm`, `piket`, `mapel`, `kelas`, `jam_pelajaran`) atau ke
+  `v_jadwal` dan `v_guru_piket`, lalu hak tulisnya dicabut dan view
+  penyambung `kg_*` dihapus
 - Sisa akses anon pada tabel induk belum ditutup seluruhnya
 - Aplikasi payroll tersendiri, dikerjakan setelah data induk mapan
