@@ -159,7 +159,7 @@ async function muatSemua() {
   const [guru, rombel, mapel, tugas, jabatan, jenis] = await Promise.all([
     ambil('guru', 'select=' + KOLOM_GURU + '&order=nama'),
     ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
-    ambil('kg_mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
+    ambil('mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
     ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
     ambil('jabatan', 'select=nama,kategori,aktif&order=urutan'),
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
@@ -167,7 +167,7 @@ async function muatSemua() {
   D.guru = guru || []; D.rombel = rombel || [];
 
   // Piket dan komponen honor dibaca dari view, bukan disimpulkan sendiri.
-  // Sumber kebenaran piket adalah jadwal kg_piket milik aplikasi
+  // Sumber kebenaran piket adalah jadwal piket
   // Kehadiran Guru, jadi halaman ini hanya menampilkan.
   try {
     [D.piket, D.komponen] = await Promise.all([
@@ -211,7 +211,7 @@ async function muatSemua() {
   try {
     [D.jadwal, D.jamPel] = await Promise.all([
       ambilSemua('v_jadwal', 'select=*'),
-      ambil('kg_jam_pelajaran', 'select=*&order=jam_ke')
+      ambil('jam_pelajaran', 'select=*&order=jam_ke')
     ]);
   } catch (e) {
     D.jadwal = []; D.jamPel = [];
@@ -1210,7 +1210,7 @@ function dialogPiketSel(hari, jamKe) {
     const id = b.dataset.keluar;
     tutupModal();
     jalankan('Menyimpan…', async () => {
-      if (MODE === 'db') await buang('kg_piket', `id=eq.${enc(id)}`);
+      if (MODE === 'db') await buang('piket', `id=eq.${enc(id)}`);
       D.piketJadwal = D.piketJadwal.filter(p => String(p.id) !== String(id));
       if (MODE === 'db') await muatSemua();
       toast('Petugas dikeluarkan');
@@ -1222,7 +1222,7 @@ function dialogPiketSel(hari, jamKe) {
     tutupModal();
     jalankan('Menyimpan…', async () => {
       if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
-      await simpanBaru('kg_piket', {
+      await simpanBaru('piket', {
         id: 'PK' + Date.now().toString(36).toUpperCase(),
         guru_id: guruId, hari: hari, jam_ke: jamKe });
       await muatSemua();
@@ -1661,14 +1661,14 @@ function formJadwal(j, hari, jamKe, sudut, pilih, smt) {
                     updated_at: new Date().toISOString() };
 
       if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
-      if (j) await perbarui('kg_jadwal_kbm', `id=eq.${enc(j.id)}`, isi);
-      else   await simpanBaru('kg_jadwal_kbm',
+      if (j) await perbarui('jadwal_kbm', `id=eq.${enc(j.id)}`, isi);
+      else   await simpanBaru('jadwal_kbm',
                 { id: idJadwalBaru(), ...isi, created_at: new Date().toISOString() });
       await muatSemua();
       toast(j ? 'Jam pelajaran diperbarui' : 'Jam pelajaran ditambahkan');
     },
     hapus: j ? async () => {
-      if (MODE === 'db') await buang('kg_jadwal_kbm', `id=eq.${enc(j.id)}`);
+      if (MODE === 'db') await buang('jadwal_kbm', `id=eq.${enc(j.id)}`);
       D.jadwal = D.jadwal.filter(x => x.id !== j.id);
       if (MODE === 'db') await muatSemua();
       toast('Jam pelajaran dihapus');
@@ -2056,7 +2056,7 @@ function halKelas() {
 function halMapel() {
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Mata Pelajaran</h1>
-      <p>Dipakai bersama oleh data guru dan jadwal KBM. Tersimpan pada tabel <code>kg_mapel</code>.</p></div>
+      <p>Dipakai bersama oleh data guru dan jadwal KBM. Tersimpan pada tabel <code>mapel</code>.</p></div>
       <div class="sp"></div><button class="btn btn-p" id="bTambah">+ Tambah mapel</button></div>
     <div class="panel"><div class="panel-head"><div class="info">${D.mapel.length} mata pelajaran</div></div>
       <div class="scroll"><table><thead><tr>
@@ -2072,7 +2072,7 @@ function halMapel() {
         || `<tr><td colspan="5"><div class="empty"><b>Belum ada mata pelajaran</b></div></td></tr>`
       }</tbody></table></div></div>
     <p class="kecil">Penghapusan mata pelajaran tidak disediakan di sini karena
-      <code>kg_jadwal_kbm</code> merujuk tabel ini. Mapel yang tidak dipakai lagi cukup dibiarkan.</p>`;
+      <code>jadwal_kbm</code> merujuk tabel ini. Mapel yang tidak dipakai lagi cukup dibiarkan.</p>`;
 
   $('#bTambah').onclick = () => formMapel(null);
   $('tbody').onclick = e => {
@@ -2097,11 +2097,11 @@ function formMapel(m) {
         if (m) Object.assign(m, { nama: isi.nama_mapel, rumpun: isi.rumpun_mapel });
         else D.mapel.push({ id: n.id, nama: isi.nama_mapel, rumpun: isi.rumpun_mapel });
       } else if (m) {
-        await perbarui('kg_mapel', `id=eq.${enc(m.id)}`, isi);
+        await perbarui('mapel', `id=eq.${enc(m.id)}`, isi);
         Object.assign(m, { nama: isi.nama_mapel, rumpun: isi.rumpun_mapel });
       } else {
         if (D.mapel.some(x => x.id === n.id.trim())) throw new Error('Kode ' + n.id + ' sudah dipakai.');
-        await simpanBaru('kg_mapel', { id: n.id.trim(), ...isi });
+        await simpanBaru('mapel', { id: n.id.trim(), ...isi });
       }
       if (MODE === 'db') await muatSemua();
       D.mapel.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
