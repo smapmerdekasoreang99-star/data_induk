@@ -729,17 +729,9 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
       ws.columns = [{ width: 4.5 }, { width: 32 }, { width: 5 }, { width: 8 },
                     ...Array.from({ length: PERTEMUAN }, () => ({ width: 3.4 }))];
 
-      const tengah = (r, t, u, tb) => {
-        ws.mergeCells(r, 1, r, kolomAkhir);
-        const c = ws.getCell(r, 1);
-        c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
-        c.alignment = { horizontal: 'center', vertical: 'middle' };
-      };
-      tengah(1, judulAbsen.toUpperCase(), 13, true);
-      tengah(2, (SEKOLAH.nama || '').toUpperCase(), 12, true);
-      tengah(3, 'TAHUN PELAJARAN ' + sesi.ta, 10.5, false);
-
-      let r = 5;
+      // Kop yang sama dengan berkas lain: logo, nama dan alamat sekolah
+      // di sebelahnya, lalu judul di tengah.
+      let r = await kopExcel(wb, ws, judulAbsen, 'Tahun Pelajaran ' + sesi.ta, kolomAkhir);
       const isiKet = [[keterangan.labelKelas, namaKelas]]
         .concat(mapel ? [['Mata Pelajaran', mapel]] : [])
         .concat([[keterangan.labelGuru, keterangan.nilaiGuru || '……………………………………………']]);
@@ -2707,15 +2699,23 @@ async function kopExcel(wb, ws, judul, subjudul, kolomAkhir) {
     ws.addImage(id, { tl: { col: 0.2, row: 0.15 }, ext: { width: 62, height: 62 } });
   } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
 
-  // Logo selebar kira-kira 9 satuan lebar kolom. Teks kop dimulai pada
-  // kolom pertama yang sudah melewati lebar itu — kalau tidak, pada
-  // tabel berkolom sempit logonya menimpa tulisan.
-  let lebarKumpul = 0, kolomTeks = 2;
+  // Logo selebar kira-kira 9 satuan lebar kolom. Teks kop diletakkan
+  // pada kolom tempat logo berakhir, lalu digeser ke dalam sejauh sisa
+  // lebar logo — sehingga tulisan menempel di sebelah logo, tidak
+  // melompat satu kolom penuh dan tidak pula tertimpa.
+  const LEBAR_LOGO = 9;
   const daftarLebar = (ws.columns || []).map(k => (k && k.width) || 10);
+  let lebarKumpul = 0, kolomTeks = 2, geser = 0;
   for (let i = 0; i < daftarLebar.length; i++) {
+    const sebelum = lebarKumpul;
     lebarKumpul += daftarLebar[i];
-    if (lebarKumpul >= 9.5) { kolomTeks = i + 2; break; }
+    if (lebarKumpul >= LEBAR_LOGO) {
+      kolomTeks = i + 1;
+      geser = Math.max(0, Math.round(LEBAR_LOGO - sebelum));
+      break;
+    }
   }
+  if (kolomTeks < 2) { kolomTeks = 2; geser = 0; }
   kolomTeks = Math.min(kolomTeks, Math.max(2, kolomAkhir));
 
   const akhirKol = Math.max(kolomTeks, kolomAkhir);
@@ -2723,7 +2723,7 @@ async function kopExcel(wb, ws, judul, subjudul, kolomAkhir) {
     ws.mergeCells(r, kolomTeks, r, akhirKol);
     const c = ws.getCell(r, kolomTeks);
     c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
-    c.alignment = { horizontal: 'left', vertical: 'middle' };
+    c.alignment = { horizontal: 'left', vertical: 'middle', indent: geser };
     ws.getRow(r).height = u >= 13 ? 24 : 16;
   };
   const tengah = (r, t, u, tb) => {
@@ -2774,17 +2774,30 @@ function kakiExcel(ws, baris, kolomAkhir) {
 
 /* Blok tanda tangan seragam, juga dari Profil Dokumen. */
 function ttdExcel(ws, baris, kolomAkhir) {
-  const k = Math.max(2, kolomAkhir - 1);
-  const tgl = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-  ws.getCell(baris, k).value = `${SEKOLAH.kota || ''}, ${tgl}`;
-  ws.getCell(baris + 1, k).value = 'Kepala Sekolah,';
-  ws.getCell(baris + 5, k).value = SEKOLAH.kepala || '';
-  ws.getCell(baris + 5, k).font = { bold: true, underline: true };
-  if (SEKOLAH.nip) {
-    ws.getCell(baris + 6, k).value = 'NIP. ' + SEKOLAH.nip;
-    ws.getCell(baris + 6, k).font = { size: 9.5 };
+  // Blok tanda tangan digabung dari beberapa kolom terakhir sampai
+  // lebarnya cukup memuat tanggal — kalau ditaruh pada satu kolom
+  // sempit, tulisannya meluber melewati garis tabel paling kanan.
+  const lebar = (ws.columns || []).map(k => (k && k.width) || 10);
+  let kumpul = 0, mulai = kolomAkhir;
+  for (let k = kolomAkhir; k >= 1; k--) {
+    kumpul += lebar[k - 1] || 10;
+    mulai = k;
+    if (kumpul >= 30) break;
   }
-  [baris, baris + 1].forEach(x => ws.getCell(x, k).font = { size: 10 });
+
+  const tgl = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  const tulis = (r, teks, gaya) => {
+    if (mulai < kolomAkhir) ws.mergeCells(r, mulai, r, kolomAkhir);
+    const c = ws.getCell(r, mulai);
+    c.value = teks;
+    c.font = Object.assign({ size: 10 }, gaya || {});
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+  };
+
+  tulis(baris, (SEKOLAH.kota || '') + ', ' + tgl);
+  tulis(baris + 1, 'Kepala Sekolah,');
+  tulis(baris + 5, SEKOLAH.kepala || '', { bold: true, underline: true });
+  if (SEKOLAH.nip) tulis(baris + 6, 'NIP. ' + SEKOLAH.nip, { size: 9.5 });
 }
 
 /* Daftar bertabel — siswa, guru, kelompok, dan sejenisnya. Kini berkop
