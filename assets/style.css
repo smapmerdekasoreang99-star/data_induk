@@ -149,3 +149,108 @@ td.act{text-align:right;white-space:nowrap}
   main{padding:16px 14px 80px}
   .hide-sm{display:none}
 }
+
+/* ---- Jadwal KBM: matriks (kolom = jam, baris = hari / kelas) ---- */
+.mx-seg{display:inline-flex;gap:2px;padding:3px;background:#fff;border:1px solid var(--line);border-radius:9px;flex-wrap:wrap}
+.mx-seg button{border:none;background:none;padding:5px 12px;border-radius:6px;font-size:13px;font-weight:500;color:var(--ink2);
+  display:inline-flex;align-items:center;gap:6px}
+.mx-seg button:hover{color:var(--ink);background:#F2F6F5}
+.mx-seg button.on{background:var(--ink);color:#fff}
+.mx-titik{width:7px;height:7px;border-radius:50%;display:inline-block}
+.mx-pilih{display:inline-flex;gap:5px;align-items:center}
+.mx-pilih .field{width:auto;min-width:220px}
+.mx-pilih .btn-sm{font-size:16px;line-height:1;padding:6px 10px}
+
+.mx-scroll{overflow:auto;max-height:78vh}
+table.mx{table-layout:fixed;border-collapse:separate;border-spacing:0}
+table.mx th,table.mx td{padding:0;border-bottom:1px solid var(--line2)}
+table.mx tbody tr:hover{background:none}
+table.mx thead th{position:sticky;top:0;z-index:3;background:#F7FAF9;border-bottom:1px solid var(--line);
+  text-align:center;vertical-align:bottom;padding:8px 3px;white-space:nowrap}
+table.mx thead th.mx-sudut{width:96px;left:0;z-index:4;text-align:left;padding-left:14px;border-right:1px solid var(--line)}
+.mx-jam b{display:block;font-size:15px;font-weight:600;color:var(--ink);line-height:1.1}
+.mx-jam span{display:block;font-size:10.5px;font-weight:400;color:var(--ink3)}
+.mx-jam i{display:inline-block;margin-top:3px;font-style:normal;font-size:10.5px;padding:0 6px;border-radius:4px;
+  background:#E6F1EE;color:var(--primary)}
+table.mx thead th.skr{background:var(--ink)}
+table.mx thead th.skr b{color:#fff}
+table.mx thead th.skr span{color:#9FD3C7}
+table.mx .mx-sela{width:12px;background:repeating-linear-gradient(135deg,transparent 0 4px,rgba(15,110,92,.13) 4px 5px),#FAFCFB}
+
+table.mx th.mx-label{position:sticky;left:0;z-index:2;background:#fff;text-align:left;padding:6px 8px 6px 14px;
+  border-right:1px solid var(--line);font-size:13.5px;font-weight:600;color:var(--ink);white-space:normal;line-height:1.2}
+.mx-label small{display:block;font-size:10.5px;font-weight:400;color:var(--ink3);margin-top:2px}
+table.mx tr.aktif th.mx-label{background:#EDF5F3;box-shadow:inset 3px 0 0 var(--primary)}
+table.mx tr.grup th.mx-label{background:#F7FAF9;font-size:12.5px}
+table.mx tr:not(.grup) + tr.grup > *{border-top:2px solid var(--line)}
+
+table.mx td.mx-sel{height:62px;padding:3px;vertical-align:top}
+table.mx td.skr{background:rgba(15,110,92,.07)}
+table.mx td.bentrok{background:#FCE9E7}
+
+.mx-blok{height:54px;padding:5px 5px 5px 7px;display:flex;flex-direction:column;justify-content:center;overflow:hidden;
+  border-radius:6px;border-left:3px solid var(--aksen);background:var(--bg);cursor:pointer;transition:filter .12s}
+.mx-blok:hover{filter:brightness(.95)}
+.mx-blok .u{font-size:11.5px;font-weight:600;line-height:1.22;letter-spacing:-.01em;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mx-blok .k{font-size:10.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:color-mix(in srgb,var(--aksen) 75%,#000)}
+td.bentrok .mx-blok{border-left-color:var(--danger)}
+
+/* jam berurutan yang sama tampil sebagai satu blok; teks blok awal melebar sepanjang rangkaian */
+.mx-blok.kanan{margin-right:-3px;border-top-right-radius:0;border-bottom-right-radius:0}
+.mx-blok.kiri{margin-left:-3px;border-left:none;border-top-left-radius:0;border-bottom-left-radius:0;
+  box-shadow:inset 1px 0 0 rgba(255,255,255,.8)}
+.mx-blok.kiri>span{visibility:hidden}
+.mx-blok.kanan:not(.kiri){overflow:visible}
+.mx-blok.kanan:not(.kiri)>span{position:relative;z-index:1;width:calc(var(--rentang)*100% + (var(--rentang) - 1)*14px)}
+
+/* guru beregu: berjajar di sel lebar, menumpuk di sel sempit */
+.mx-tumpuk{display:flex;flex-wrap:wrap;gap:3px;min-height:54px}
+.mx-tumpuk>.mx-blok.rapat{flex:1 1 110px;min-width:0;height:auto;min-height:25px;padding-top:2px;padding-bottom:2px}
+.mx-blok.rapat .u{-webkit-line-clamp:1}
+.mx-blok.rapat .k{display:none}
+
+/* jam kelompok belajar pada jadwal rombel: bukan untuk diisi */
+.mx-blok.kunci{cursor:default;border-left:none;--aksen:var(--ink3);align-items:center;text-align:center;
+  background:repeating-linear-gradient(135deg,#F4F7F6 0 6px,#EBF1EF 6px 12px)}
+.mx-blok.kunci:hover{filter:none}
+.mx-blok.kunci .u{font-weight:500;color:var(--primary)}
+.mx-blok.kunci .k{color:var(--ink3)}
+.mx-blok.ringkas .k{font-weight:500}
+
+.mx-tambah{height:54px;display:flex;align-items:center;justify-content:center;border:1px dashed transparent;
+  border-radius:6px;color:transparent;font-size:18px;cursor:pointer}
+td.kosong:hover .mx-tambah{border-color:var(--primary);background:#EDF5F3;color:var(--primary)}
+@media (hover:none){.mx-tambah{color:var(--line);border-color:var(--line2)}}
+.mx-blok.kunci{align-items:flex-start}
+.mx-blok.kunci>span{width:100%}
+
+/* ---- Jadwal piket: satu lajur per petugas dalam baris hari ---- */
+table.mx td.pk-sel{cursor:pointer;position:relative;padding:4px 3px}
+table.mx td.pk-nol{background:#F7FAF9}
+table.mx td.pk-sel:hover{background:#EDF5F3}
+.pk-pita,.pk-kosong{height:22px;margin-bottom:2px}
+.pk-pita{display:flex;align-items:center;padding:0 6px;border-radius:5px;background:var(--bg);
+  border-left:3px solid var(--aksen);font-size:11px;font-weight:600;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pk-pita.staf{border:1px dashed var(--aksen);border-left:3px solid var(--aksen)}
+.pk-pita.kanan{margin-right:-3px;border-top-right-radius:0;border-bottom-right-radius:0}
+.pk-pita.kiri{margin-left:-3px;border-left:none;border-top-left-radius:0;border-bottom-left-radius:0;color:transparent;
+  box-shadow:inset 1px 0 0 rgba(255,255,255,.8)}
+.pk-pita.kanan:not(.kiri){overflow:visible;text-overflow:clip;position:relative;z-index:1}
+.pk-tambah{display:none;position:absolute;right:4px;bottom:3px;width:18px;height:18px;border-radius:50%;
+  background:var(--primary);color:#fff;font-size:13px;line-height:18px;text-align:center}
+td.pk-sel:hover .pk-tambah{display:block}
+td.pk-nol .pk-tambah{display:block;position:static;margin:16px auto 0;background:none;color:var(--line);font-size:18px}
+td.pk-nol:hover .pk-tambah{color:var(--primary)}
+.pk-legenda{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.pk-legenda::before{content:"";width:18px;height:10px;border-radius:3px;background:var(--bg);border-left:3px solid var(--aksen)}
+.pk-pita.staf.kanan{border-right:none}
+.pk-pita.staf.kiri{border-left:none}
+table.mx td.pk-nol{vertical-align:middle}
+td.pk-nol .pk-tambah{margin:0 auto}
+/* baris hari ringkas: pita ramping, sel tidak dipaksa tinggi */
+table.mx td.pk-sel{height:30px;padding:3px}
+.pk-pita,.pk-kosong{height:18px;margin-bottom:2px}
+.pk-pita{font-size:10.5px;padding:0 5px;border-radius:4px}
