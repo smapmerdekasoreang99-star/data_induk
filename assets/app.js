@@ -31,7 +31,7 @@ const MODE = (KONFIG.url && KONFIG.anonKey) ? 'db' : 'contoh';
 /* Kolom tabel guru yang sebenarnya di database sekolah. */
 const KOLOM_GURU = 'id,nig,nama,nip,nuptk,jenis_kelamin,jenis_ptk,status_aktif,'
   + 'tmt_sekolah,tmt_guru,tmt_status,pendidikan_terakhir,jurusan,linier,'
-  + 'no_sertifikat_pendidik,mapel_utama,no_hp,email,catatan';
+  + 'no_sertifikat_pendidik,mapel_utama,no_hp,email,catatan,insentif_fingerprint';
 const PTK = ['Guru Tetap Yayasan','Guru Tidak Tetap','Tenaga Kependidikan','Pimpinan'];
 const STATUS_SISWA = ['aktif', 'pindah', 'keluar', 'lulus'];
 const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
@@ -881,7 +881,8 @@ function formGuru(id) {
   const g = id ? D.guru.find(x => x.id === id) : { status_aktif: 'Aktif', nig: String(nigBerikut()) };
   formulir({
     judul: id ? 'Ubah data guru' : 'Tambah guru',
-    nilai: { ...g, linier: g.linier === true ? 'ya' : g.linier === false ? 'tidak' : '' },
+    nilai: { ...g, linier: g.linier === true ? 'ya' : g.linier === false ? 'tidak' : '',
+             insentif_fingerprint: g.insentif_fingerprint ? 'ya' : 'tidak' },
     lebar: true,
     catatan: id ? 'NIG dan ID tidak dapat diubah karena sudah dirujuk jadwal KBM dan data lain.' : '',
     kolom: [
@@ -913,6 +914,9 @@ function formGuru(id) {
         opsi: [{ v: '', t: '— belum diisi —' }, { v: 'ya', t: 'Ya' }, { v: 'tidak', t: 'Tidak' }],
         hint: 'Kesesuaian jurusan pendidikan dengan mata pelajaran yang diampu' },
       { k: 'no_sertifikat_pendidik', label: 'Nomor sertifikat pendidik' },
+      { k: 'insentif_fingerprint', label: 'Insentif TM & Konsumsi lewat fingerprint', tipe: 'pilih',
+        opsi: [{ v: 'tidak', t: 'Tidak — dihitung dari rekap kehadiran' }, { v: 'ya', t: 'Ya — dibayar akhir bulan dari fingerprint' }],
+        hint: 'Sesuai kontrak kerja. Honor Mengajar & Transport Berdiri tetap dihitung (berbeda dengan Staf).' },
 
       { k: 'no_hp', label: 'Nomor HP' },
       { k: 'email', label: 'Email' },
@@ -931,6 +935,7 @@ function formGuru(id) {
         linier: n.linier === 'ya' ? true : n.linier === 'tidak' ? false : null,
         no_sertifikat_pendidik: bersih(n.no_sertifikat_pendidik),
         mapel_utama: bersih(n.mapel_utama),
+        insentif_fingerprint: n.insentif_fingerprint === 'ya',
         no_hp: bersih(n.no_hp), email: bersih(n.email), catatan: bersih(n.catatan)
       };
       if (MODE === 'contoh') {
