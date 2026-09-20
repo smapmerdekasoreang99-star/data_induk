@@ -254,3 +254,37 @@ td.pk-nol .pk-tambah{margin:0 auto}
 table.mx td.pk-sel{height:30px;padding:3px}
 .pk-pita,.pk-kosong{height:18px;margin-bottom:2px}
 .pk-pita{font-size:10.5px;padding:0 5px;border-radius:4px}
+
+/* ---- Matriks piket unit: kotak yang bisa diseret antar sel ---- */
+table.mx td.pu-sel{cursor:pointer;position:relative;padding:3px;height:34px;vertical-align:top}
+table.mx td.pu-sel:hover{background:#EDF5F3}
+table.mx td.pu-sel.incar{background:#DCEFE8;box-shadow:inset 0 0 0 2px var(--primary)}
+table.mx td.pu-sel:hover .pk-tambah{display:block}
+table.mx td.pu-sel.pk-nol .pk-tambah{display:block;position:static;margin:0 auto;background:none;color:var(--line);font-size:18px}
+table.mx td.pu-sel.pk-nol:hover .pk-tambah{color:var(--primary)}
+.pu-kotak{height:20px;margin-bottom:2px;display:flex;align-items:center;padding:0 5px;border-radius:4px;
+  background:var(--bg);border-left:3px solid var(--aksen);font-size:10.5px;font-weight:600;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab}
+.pu-kotak:active{cursor:grabbing}
+.pu-kotak.seret{opacity:.4}
+
+/* Daftar sisa jam: sumber kotak baru, sekaligus tempat membuang kotak lama */
+.pu-tray{display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px;min-height:52px;align-items:center;
+  border-radius:8px;transition:background .12s,box-shadow .12s}
+.pu-tray.incar{background:#FCE9E7;box-shadow:inset 0 0 0 2px var(--danger)}
+.pu-sisa{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;
+  background:var(--bg);border-left:3px solid var(--aksen);font-size:12px;font-weight:500;color:var(--ink);cursor:grab}
+.pu-sisa:active{cursor:grabbing}
+.pu-sisa.seret{opacity:.4}
+.pu-sisa b{font-weight:700;font-size:11px;color:var(--aksen)}
+.pu-sisa.penuh,.pu-sisa.lebih{cursor:default;opacity:.7}
+.pu-sisa.lebih b{color:var(--danger)}
+
+/* Pita piket meja sekolah ikut bisa diseret */
+.pk-pita[draggable="true"]{cursor:grab}
+.pk-pita[draggable="true"]:active{cursor:grabbing}
+.pk-pita.seret{opacity:.4}
+table.mx td.pk-sel.incar{background:#DCEFE8;box-shadow:inset 0 0 0 2px var(--primary)}
+.pu-tray.buang{justify-content:center;font-size:12px;color:var(--ink3);
+  border:1px dashed var(--line);margin-top:10px;min-height:44px}
+.pu-tray.buang.incar{color:var(--danger);border-color:var(--danger)}

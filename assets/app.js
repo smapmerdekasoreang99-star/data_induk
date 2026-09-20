@@ -38,7 +38,7 @@ const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
 
 let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
-          jenis: [], piket: [], komponen: [], parkiran: [],
+          jenis: [], piket: [], komponen: [], parkiran: [], piketUnit: [],
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
           jadwal: [], jamPel: [], piketJadwal: [], profil: null, galat: {} };
 let halaman = 'beranda';
@@ -180,6 +180,8 @@ async function muatSemua() {
     // boleh menjatuhkan seluruh halaman piket.
     try { D.parkiran = await ambil('v_piket_parkiran', 'select=*&order=urutan_hari'); }
     catch (e) { D.parkiran = []; console.warn('v_piket_parkiran belum ada:', e.message); }
+    try { D.piketUnit = await ambilSemua('v_jadwal_piket_unit', 'select=*'); }
+    catch (e) { D.piketUnit = []; console.warn('v_jadwal_piket_unit belum ada:', e.message); }
   } catch (e) {
     D.profil = { id:1, nama_sekolah:'SMA Plus "Merdeka" Soreang',
     alamat:'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung', kota:'Soreang',
@@ -1187,6 +1189,34 @@ function akhiriTugas(t) {
 
 
 /* ------------------------------------------- matriks jadwal piket */
+/* Satu sumber untuk bilah tab halaman Piket. Sebelumnya tiap tab menuliskan
+   bilahnya sendiri, dan tiap penambahan tab harus disalin ke semua. */
+const TAB_PIKET = [
+  ['meja',     'Piket Meja Sekolah'],
+  ['unit',     'Piket Unit + Diperbantukan'],
+  ['parkiran', 'Piket parkiran']
+];
+const barPiket = (aktif, ekstra = '') => `<div class="bar">${
+  TAB_PIKET.map(([k, t]) => `<button class="chip${k === aktif ? ' on' : ''}" data-tab="${k}">${esc(t)}</button>`).join('')
+}${ekstra}</div>`;
+
+/* Tiga tampilan dalam satu halaman Piket Meja Sekolah. Dipakai segmented
+   control, bukan chip, supaya jelas ini tingkat di bawah tab utama. */
+const SUB_MEJA = [
+  ['matriks',  'Matriks jadwal'],
+  ['petugas',  'Petugas piket'],
+  ['komponen', 'Komponen honor wali kelas']
+];
+const barSubMeja = (aktif, ekstra = '') => `<div class="bar"><div class="mx-seg">${
+  SUB_MEJA.map(([k, t]) => `<button class="${k === aktif ? 'on' : ''}" data-sub="${k}">${esc(t)}</button>`).join('')
+}</div>${ekstra}</div>`;
+
+/* Satu tempat memasang seluruh tombol perpindahan halaman piket. */
+function pasangTabPiket() {
+  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
+  $$('[data-sub]').forEach(b => b.onclick = () => { ui.mejaSub = b.dataset.sub; gambar(); });
+}
+
 function halPiketMatriks() {
   const HR = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   const data = D.piketJadwal || [];
@@ -1254,9 +1284,11 @@ function halPiketMatriks() {
         const sambungKiri = kiri && !kiri.sela && ada(g, kiri.jk);
         const sambungKanan = kanan && !kanan.sela && ada(g, kanan.jk);
         return `<div class="pk-pita${sambungKiri ? ' kiri' : ''}${sambungKanan ? ' kanan' : ''}${p.staf ? ' staf' : ''}"
+          draggable="true" data-id="${esc(p.id)}"
           style="--bg:${w[0]};--aksen:${w[1]}"
           title="${esc(p.guru + '\n' + h + ' jam ke-' + c.jk + (jamTeks(c.jk) ? ' (' + jamTeks(c.jk) + ')' : '')
-                 + '\nDasar: ' + p.dasar + (p.staf ? ' · tanpa transport' : ''))}">${esc(namaPendek(p.guru))}</div>`;
+                 + '\nDasar: ' + p.dasar + (p.staf ? ' · tanpa transport' : '')
+                 + '\nSeret untuk memindahkan')}">${esc(namaPendek(p.guru))}</div>`;
       }).join('');
       return `<td class="mx-sel pk-sel${skr}${n ? '' : ' pk-nol'}" data-hari="${h}" data-jam="${c.jk}"
         title="${esc(h + ' jam ke-' + c.jk + ' · ' + (n ? n + ' petugas' : 'belum ada petugas') + ' — klik untuk mengatur')}">
@@ -1276,21 +1308,16 @@ function halPiketMatriks() {
         ${c.jam.keterangan ? `<i>${esc(c.jam.keterangan)}</i>` : ''}</th>`).join('');
 
   $('#isi').innerHTML = `
-    <div class="head"><div><h1>Matriks Jadwal Piket</h1>
+    <div class="head"><div><h1>Piket Meja Sekolah</h1>
       <p>Siapa berjaga pada hari dan jam mana. Jam yang kosong tidak ada petugasnya.</p></div>
       <div class="sp"></div>
       <button class="btn" id="bUnduhPiket">Unduh (xlsx)</button></div>
 
-    <div class="bar">
-      <button class="chip on" data-tab="matriks">Matriks jadwal piket</button>
-      <button class="chip" data-tab="ringkasan">Ringkasan</button>
-      <button class="chip" data-tab="parkiran">Piket parkiran</button>
-      <div class="sp" style="flex:1"></div>
-      ${dasarAda.map(d => {
-        const w = warnaDasar(d);
-        return `<span class="pk-legenda" style="--bg:${w[0]};--aksen:${w[1]}">${esc(d)}</span>`;
-      }).join('')}
-    </div>
+    ${barPiket('meja')}
+    ${barSubMeja('matriks', '<div class="sp" style="flex:1"></div>' + dasarAda.map(d => {
+      const w = warnaDasar(d);
+      return `<span class="pk-legenda" style="--bg:${w[0]};--aksen:${w[1]}">${esc(d)}</span>`;
+    }).join(''))}
 
     ${!data.length ? `<div class="panel"><div class="empty"><b>Belum ada jadwal piket terbaca</b>
       Jalankan berkas 35 lebih dulu, lalu muat ulang halaman.</div></div>` : `
@@ -1305,12 +1332,91 @@ function halPiketMatriks() {
       menambah atau mengeluarkan petugas. Tiap petugas punya lajurnya sendiri dalam satu hari,
       jadi jam jaga yang berturut-turut tampil sebagai satu pita panjang.
       Warna pita menunjukkan atas dasar apa ia berjaga; pita bergaris putus-putus berarti staf
-      (tanpa transport). Kolom berlatar abu belum ada petugasnya.</p>`}`;
+      (tanpa transport). Kolom berlatar abu belum ada petugasnya.
+      Seret pita untuk memindahkan jam jaganya; penempatan ditolak bila pada jam itu guru
+      tersebut sedang mengajar atau menjaga unit.</p>
 
-  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
+    <div class="pu-tray buang" id="pkBuang">Seret pita ke sini untuk mengeluarkan petugas dari jadwal</div>`}`;
+
+  pasangTabPiket();
   if ($('#bUnduhPiket')) $('#bUnduhPiket').onclick = () => unduhPiketXlsx(pakai, jamKe, sel, jamTeks);
-  $$('.pk-sel').forEach(td => td.onclick = () =>
-    dialogPiketSel(td.dataset.hari, +td.dataset.jam));
+  pasangSeretMeja();
+}
+
+/* Seret pita piket meja sekolah antar sel; ketuk sel tetap membuka daftar
+   untuk menambah atau mengeluarkan, dan itulah jalan di layar sentuh. */
+function pasangSeretMeja() {
+  let bawa = null;
+
+  $$('.pk-pita[data-id]').forEach(el => {
+    el.addEventListener('dragstart', ev => {
+      bawa = { id: el.dataset.id };
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', JSON.stringify(bawa));
+      el.classList.add('seret');
+    });
+    el.addEventListener('dragend', () => { el.classList.remove('seret'); bawa = null; });
+  });
+
+  $$('.pk-sel').forEach(td => {
+    td.addEventListener('dragover', ev => { ev.preventDefault(); td.classList.add('incar'); });
+    td.addEventListener('dragleave', () => td.classList.remove('incar'));
+    td.addEventListener('drop', ev => {
+      ev.preventDefault();
+      td.classList.remove('incar');
+      const m = bawa || bacaMuatan(ev);
+      if (m && m.id) pindahPiketMeja(m.id, td.dataset.hari, Number(td.dataset.jam));
+    });
+    td.addEventListener('click', () => dialogPiketSel(td.dataset.hari, +td.dataset.jam));
+  });
+
+  const buang = $('#pkBuang');
+  if (buang) {
+    buang.addEventListener('dragover', ev => { ev.preventDefault(); buang.classList.add('incar'); });
+    buang.addEventListener('dragleave', () => buang.classList.remove('incar'));
+    buang.addEventListener('drop', ev => {
+      ev.preventDefault();
+      buang.classList.remove('incar');
+      const m = bawa || bacaMuatan(ev);
+      if (m && m.id) keluarkanPiketMeja(m.id);
+    });
+  }
+}
+
+/* Bentrok bagi petugas piket meja sekolah. Piket meja sendiri tidak dihitung
+   bentrok antar petugas — satu jam boleh dijaga beberapa orang — yang dicegah
+   adalah satu orang berada di dua tempat sekaligus. */
+function bentrokMeja(guruId, hari, jamKe, kecualiId) {
+  const j = D.jadwal.find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
+  if (j) return `sedang mengajar ${j.mapel || ''} di ${j.kelas || ''}`.replace(/\s+/g, ' ').trim();
+  const u = (D.piketUnit || []).find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
+  if (u) return `sedang menjaga ${u.unit || 'unit'}`;
+  const m = (D.piketJadwal || []).find(x => x.guru_id === guruId && x.hari === hari &&
+    Number(x.jam_ke) === jamKe && String(x.id) !== String(kecualiId));
+  if (m) return 'sudah berjaga di meja sekolah';
+  return null;
+}
+
+function pindahPiketMeja(id, hari, jamKe) {
+  const p = (D.piketJadwal || []).find(x => String(x.id) === String(id));
+  if (!p || (p.hari === hari && Number(p.jam_ke) === jamKe)) return;
+  jalankan('Menyimpan…', async () => {
+    const sebab = bentrokMeja(p.guru_id, hari, jamKe, id);
+    if (sebab) throw new Error(`${p.guru} ${sebab} pada ${hari} jam ke-${jamKe}.`);
+    if (MODE === 'db') { await perbarui('piket', `id=eq.${enc(id)}`, { hari, jam_ke: jamKe }); await muatSemua(); }
+    else { p.hari = hari; p.jam_ke = jamKe; }
+    toast(`${namaPendek(p.guru)}: ${hari} jam ke-${jamKe}`);
+  });
+}
+
+function keluarkanPiketMeja(id) {
+  const p = (D.piketJadwal || []).find(x => String(x.id) === String(id));
+  if (!p) return;
+  jalankan('Menyimpan…', async () => {
+    if (MODE === 'db') { await buang('piket', `id=eq.${enc(id)}`); await muatSemua(); }
+    else D.piketJadwal = D.piketJadwal.filter(x => String(x.id) !== String(id));
+    toast(`${namaPendek(p.guru)} dikeluarkan dari ${p.hari} jam ke-${p.jam_ke}`);
+  });
 }
 
 /* Mengatur petugas pada satu hari dan jam: menambah atau mengeluarkan. */
@@ -1332,29 +1438,27 @@ function dialogPiketSel(hari, jamKe) {
     <div class="fg" style="margin-top:14px"><label>Tambahkan petugas</label>
       <select class="field" id="pTambah">
         <option value="">— pilih guru —</option>
-        ${calon.map(g => `<option value="${esc(g.id)}">${esc(g.nama)}</option>`).join('')}
+        ${calon.map(g => {
+          const sebab = bentrokMeja(g.id, hari, jamKe, null);
+          return `<option value="${esc(g.id)}" ${sebab ? 'disabled' : ''}>${esc(g.nama)}${
+            sebab ? ` — ${esc(sebab)}` : ''}</option>`;
+        }).join('')}
       </select>
-      <div class="hint">Guru yang sudah berjaga pada jam ini tidak ditampilkan.</div></div>
+      <div class="hint">Guru yang sudah berjaga pada jam ini tidak ditampilkan; yang sedang
+        mengajar atau menjaga unit ditampilkan tetapi tidak bisa dipilih.</div></div>
     </div>
     <div class="aksi"><button class="btn" id="m-batal">Tutup</button>
       <button class="btn btn-p" id="m-tambah">Tambahkan</button></div>`);
 
   $('#m-batal').onclick = tutupModal;
-  $$('[data-keluar]').forEach(b => b.onclick = () => {
-    const id = b.dataset.keluar;
-    tutupModal();
-    jalankan('Menyimpan…', async () => {
-      if (MODE === 'db') await buang('piket', `id=eq.${enc(id)}`);
-      D.piketJadwal = D.piketJadwal.filter(p => String(p.id) !== String(id));
-      if (MODE === 'db') await muatSemua();
-      toast('Petugas dikeluarkan');
-    });
-  });
+  $$('[data-keluar]').forEach(b => b.onclick = () => { tutupModal(); keluarkanPiketMeja(b.dataset.keluar); });
   $('#m-tambah').onclick = () => {
     const guruId = $('#pTambah').value;
     if (!guruId) { $('#pTambah').focus(); return; }
     tutupModal();
     jalankan('Menyimpan…', async () => {
+      const sebab = bentrokMeja(guruId, hari, jamKe, null);
+      if (sebab) throw new Error(`${namaGuru(guruId)} ${sebab} pada ${hari} jam ke-${jamKe}.`);
       if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
       await simpanBaru('piket', {
         id: 'PK' + Date.now().toString(36).toUpperCase(),
@@ -2177,26 +2281,23 @@ function halPiket() {
     perGuru.get(k.nama)[k.komponen] = k;
   });
 
-  if ((ui.piketTab || 'matriks') === 'matriks') return halPiketMatriks();
+  if (ui.piketTab === 'unit') return halPiketUnit();
   if (ui.piketTab === 'parkiran') return halPiketParkiran();
+  const sub = ui.mejaSub || 'matriks';
+  if (sub === 'matriks') return halPiketMatriks();
+  if (sub === 'komponen') return halPiketKomponen(perGuru, belumIsi);
 
   $('#isi').innerHTML = `
-    <div class="head"><div><h1>Piket &amp; Komponen Honor</h1>
-      <p>Halaman baca saja. Jadwal piket dikelola aplikasi Kehadiran Guru;
-         di sini hanya ditampilkan siapa bertugas dan berapa jamnya.</p></div></div>
+    <div class="head"><div><h1>Piket Meja Sekolah</h1>
+      <p>Siapa bertugas menurut jadwal dan berapa jamnya. Jadwalnya diubah di tab
+         Matriks jadwal.</p></div></div>
 
-    <div class="bar">
-      <button class="chip" data-tab="matriks">Matriks jadwal piket</button>
-      <button class="chip on" data-tab="ringkasan">Ringkasan</button>
-      <button class="chip" data-tab="parkiran">Piket parkiran</button>
-    </div>
+    ${barPiket('meja')}
+    ${barSubMeja('petugas')}
 
     ${belumDasar.length ? `<div class="info-box"><b>${belumDasar.length} guru ada di jadwal piket
       tetapi belum tercatat dasar penugasannya.</b> Catatkan lewat halaman Tugas Guru — sebagai
       wali kelas, staf, atau guru yang ditugaskan piket — supaya jelas atas dasar apa ia berjaga.</div>` : ''}
-
-    ${belumIsi.length ? `<div class="info-box"><b>${belumIsi.length} komponen honor belum ada angkanya.</b>
-      Perhitungan honor tidak bisa dijalankan selama masih ada yang kosong.</div>` : ''}
 
     <div class="kartu-baris">
       <div class="kartu"><b>${D.piket.length}</b><span>petugas piket</span></div>
@@ -2223,8 +2324,28 @@ function halPiket() {
             <td>${p.dihitung_transport ? 'dihitung'
                   : '<span class="kecil">tidak — staf, sudah masuk jam kerja</span>'}</td></tr>`).join('')
         : `<tr><td colspan="5"><div class="empty"><b>Belum ada jadwal piket terbaca</b>
-            Jadwal dikelola aplikasi Kehadiran Guru.</div></td></tr>`
+            Jadwal diatur di tab Matriks jadwal.</div></td></tr>`
       }</tbody></table></div></div>
+
+    <p class="kecil">Jam per minggu dan harinya dihitung dari matriks jadwal, bukan diisi di sini.
+      Kolom Dasar menyebut atas dasar apa guru itu berjaga — wali kelas, staf, atau ditugaskan
+      khusus — dan itu dicatat di halaman Tugas Guru.</p>`;
+
+  pasangTabPiket();
+}
+
+/* Komponen honor wali kelas — sub dari halaman Piket Meja Sekolah karena
+   salah satu komponennya, PIKET, angkanya berasal dari jadwal piket. */
+function halPiketKomponen(perGuru, belumIsi) {
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Komponen Honor Wali Kelas</h1>
+      <p>Jam per minggu untuk Upacara, Bimbingan, dan Piket. Ketuk angkanya untuk mengubah.</p></div></div>
+
+    ${barPiket('meja')}
+    ${barSubMeja('komponen')}
+
+    ${belumIsi.length ? `<div class="info-box"><b>${belumIsi.length} komponen honor belum ada angkanya.</b>
+      Perhitungan honor tidak bisa dijalankan selama masih ada yang kosong.</div>` : ''}
 
     <div class="panel"><div class="panel-head"><h3>Komponen honor wali kelas</h3>
       <div class="sp" style="flex:1"></div><div class="info">jam per minggu</div></div>
@@ -2256,12 +2377,274 @@ function halPiket() {
       dihitung berdasarkan jam kerja lewat fingerprint. Kalau ada staf yang masih tampil,
       berarti tugas Staf-nya belum dicatat di halaman Tugas Guru.</p>`;
 
-  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
+  pasangTabPiket();
   $$('.sel-komponen').forEach(el => el.onclick = () => {
     const x = D.komponen.find(c => String(c.tugas_id) === el.dataset.tugas
                                 && c.komponen === el.dataset.komponen);
     if (x) formKomponen(x);
   });
+}
+
+/* --------------------------------------- matriks piket unit (seret) */
+/* Guru diperbantukan menjaga unitnya sekian jam per minggu; angka itu ada di
+   guru_tugas.jam_piket_unit dan menjadi dasar transport. Halaman ini
+   menyatakan KAPAN jam-jam itu dijalankan, dan sengaja tidak menimpa angka
+   kesepakatannya — selisih keduanya ditampilkan apa adanya.               */
+const HARI_UNIT = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const tugasUnitAktif = () => D.tugas
+  .filter(t => t.aktif && sifat(t.jenis, 'jam_unit'))
+  .sort((a, b) => urutNama(a.jabatan || '', b.jabatan || ''));
+const warnaUnit = tugasId => {
+  const i = tugasUnitAktif().findIndex(t => String(t.id) === String(tugasId));
+  return WARNA_BLOK[(i < 0 ? 0 : i) % WARNA_BLOK.length];
+};
+
+/* Kolom matriks: tiap jam pelajaran, dengan kolom sela tipis pada jeda
+   istirahat — sama seperti matriks jadwal piket meja sekolah. */
+function kolomJam() {
+  const jamList = D.jamPel.slice().sort((a, b) => Number(a.jam_ke) - Number(b.jam_ke));
+  const kolom = [];
+  jamList.forEach((j, i) => {
+    const prev = jamList[i - 1];
+    if (prev && prev.selesai && j.mulai && jam5(prev.selesai) !== jam5(j.mulai))
+      kolom.push({ sela: true, dari: jam5(prev.selesai), sampai: jam5(j.mulai) });
+    kolom.push({ jam: j, jk: Number(j.jam_ke) });
+  });
+  return kolom;
+}
+
+function halPiketUnit() {
+  const data = D.piketUnit || [];
+  const unit = tugasUnitAktif();
+  const kolom = kolomJam();
+  const nSela = kolom.filter(c => c.sela).length;
+  const lebarMin = 96 + (kolom.length - nSela) * 76 + nSela * 12;
+  const hariNyata = ['Minggu', ...HARI][new Date().getDay()];
+  const sekarang = jamBerjalan();
+  const ditempatkan = id => data.filter(p => String(p.tugas_id) === String(id)).length;
+
+  const isiSel = (h, jk) => data.filter(p => p.hari === h && Number(p.jam_ke) === jk);
+
+  const barisHtml = HARI_UNIT.map(h => {
+    const tds = kolom.map(c => {
+      if (c.sela) return '<td class="mx-sela"></td>';
+      const isi = isiSel(h, c.jk);
+      const skr = h === hariNyata && sekarang === c.jk ? ' skr' : '';
+      const kotak = isi.map(p => {
+        const w = warnaUnit(p.tugas_id);
+        return `<div class="pu-kotak" draggable="true" data-id="${esc(p.id)}"
+          style="--bg:${w[0]};--aksen:${w[1]}"
+          title="${esc(`${p.guru}\n${p.unit}\n${h} jam ke-${c.jk}` +
+                       (p.jam_mulai ? ` (${jam5(p.jam_mulai)}–${jam5(p.jam_selesai)})` : '') +
+                       '\nSeret untuk memindahkan')}">${esc(namaPendek(p.guru))}</div>`;
+      }).join('');
+      return `<td class="mx-sel pu-sel${skr}${isi.length ? '' : ' pk-nol'}"
+        data-hari="${esc(h)}" data-jam="${c.jk}"
+        title="${esc(`${h} jam ke-${c.jk} — seret kotak ke sini, atau ketuk untuk mengatur`)}">
+        ${kotak}<span class="pk-tambah">+</span></td>`;
+    }).join('');
+    const n = data.filter(p => p.hari === h).length;
+    return `<tr class="${h === hariNyata ? 'aktif' : ''}"><th class="mx-label" scope="row">
+      <span>${h}</span><small>${n} jam</small></th>${tds}</tr>`;
+  }).join('');
+
+  // Sisa jam yang belum ditempatkan, siap diseret ke matriks.
+  const sisaHtml = unit.map(t => {
+    const sepakat = Number(t.jam_piket_unit) || 0;
+    const sudah = ditempatkan(t.id);
+    const sisa = sepakat - sudah;
+    const w = warnaUnit(t.id);
+    const nama = namaGuru(t.guru_id);
+    if (sisa <= 0) return `<span class="pu-sisa ${sisa < 0 ? 'lebih' : 'penuh'}"
+      style="--bg:${w[0]};--aksen:${w[1]}" title="${esc(`${nama}\n${t.jabatan || ''}`)}">
+      ${esc(namaPendek(nama))} <b>${sisa < 0 ? 'lebih ' + (-sisa) + ' jam' : 'pas'}</b></span>`;
+    return `<span class="pu-sisa" draggable="true" data-tugas="${esc(t.id)}"
+      style="--bg:${w[0]};--aksen:${w[1]}"
+      title="${esc(`${nama}\n${t.jabatan || ''}\nSisa ${sisa} dari ${sepakat} jam — seret ke matriks`)}">
+      ${esc(namaPendek(nama))} <b>${sisa} jam</b></span>`;
+  }).join('');
+
+  const belumSepakat = unit.filter(t => !Number(t.jam_piket_unit));
+  const lebih = unit.filter(t => ditempatkan(t.id) > (Number(t.jam_piket_unit) || 0));
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Piket Unit + Diperbantukan</h1>
+      <p>Kapan tiap penanggung jawab menjaga unitnya. Seret kotak untuk memindahkan,
+         atau ketuk sel untuk mengaturnya lewat daftar.</p></div></div>
+
+    ${barPiket('unit', '<div class="sp" style="flex:1"></div>' + unit.map(t => {
+      const w = warnaUnit(t.id);
+      return `<span class="pk-legenda" style="--bg:${w[0]};--aksen:${w[1]}">${esc(t.jabatan || namaGuru(t.guru_id))}</span>`;
+    }).join(''))}
+
+    ${!unit.length ? `<div class="panel"><div class="empty"><b>Belum ada guru diperbantukan</b>
+      Catatkan lewat halaman Tugas Guru dengan jenis Diperbantukan, beserta jam piket unitnya.</div></div>` : `
+
+    ${belumSepakat.length ? `<div class="info-box"><b>${belumSepakat.length} penugasan belum menyebut jam piket unit per minggu.</b>
+      Isi dulu di halaman Tugas Guru — tanpa angka itu, sisa jamnya tidak bisa dihitung.</div>` : ''}
+    ${lebih.length ? `<div class="info-box"><b>${lebih.length} unit dijadwalkan melebihi jam yang disepakati.</b>
+      Angka transport tetap mengikuti jam kesepakatan di Tugas Guru, bukan jumlah kotak di sini.</div>` : ''}
+
+    <div class="panel"><div class="panel-head"><h3>Sisa jam belum ditempatkan</h3>
+      <div class="sp" style="flex:1"></div><div class="info">seret ke matriks</div></div>
+      <div class="pu-tray" id="puTray">${sisaHtml ||
+        '<span class="kecil">Seluruh jam sudah ditempatkan.</span>'}</div>
+      <div class="foot"><div class="info">Seret kotak dari matriks ke kotak ini untuk mengeluarkannya dari jadwal.</div></div>
+    </div>
+
+    <div class="panel"><div class="mx-scroll"><table class="mx" style="min-width:${lebarMin}px"><thead><tr>
+      <th class="mx-sudut">Hari</th>${kolom.map(c => c.sela
+        ? `<th class="mx-sela" title="Istirahat ${c.dari}–${c.sampai}"></th>`
+        : `<th class="mx-jam${sekarang === c.jk ? ' skr' : ''}">
+            <b>${c.jk}</b>${c.jam.mulai ? `<span>${jam5(c.jam.mulai)}–${jam5(c.jam.selesai)}</span>` : ''}
+            ${c.jam.keterangan ? `<i>${esc(c.jam.keterangan)}</i>` : ''}</th>`).join('')}
+    </tr></thead><tbody>${barisHtml}</tbody></table></div>
+    <div class="foot"><div class="info">${data.length} jam terjadwal ·
+      ${unit.length} unit · ${unit.reduce((a, t) => a + (Number(t.jam_piket_unit) || 0), 0)} jam disepakati</div></div></div>
+
+    <p class="kecil">Jam kesepakatan tiap unit diisi di <b>Tugas Guru</b> dan itulah yang dipakai
+      menghitung transport. Matriks ini menyatakan kapan jam-jam itu dijalankan, sehingga keduanya
+      bisa dibandingkan. Penempatan ditolak bila pada jam yang sama guru tersebut sedang mengajar,
+      berjaga di meja sekolah, atau menjaga unit lain.</p>`}`;
+
+  pasangTabPiket();
+  if (unit.length) pasangSeretUnit();
+}
+
+/* Seret-lepas HTML5 untuk tetikus, plus ketuk sel sebagai jalan cadangan di
+   layar sentuh — di sana seret bawaan peramban tidak berfungsi.            */
+function pasangSeretUnit() {
+  let bawa = null;                       // { id } dari matriks, atau { tugasId } dari daftar sisa
+
+  const mulai = (el, muatan) => {
+    el.addEventListener('dragstart', ev => {
+      bawa = muatan;
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', JSON.stringify(muatan));
+      el.classList.add('seret');
+    });
+    el.addEventListener('dragend', () => { el.classList.remove('seret'); bawa = null; });
+  };
+
+  $$('.pu-kotak').forEach(el => mulai(el, { id: el.dataset.id }));
+  $$('.pu-sisa[data-tugas]').forEach(el => mulai(el, { tugasId: el.dataset.tugas }));
+
+  $$('.pu-sel').forEach(td => {
+    td.addEventListener('dragover', ev => { ev.preventDefault(); td.classList.add('incar'); });
+    td.addEventListener('dragleave', () => td.classList.remove('incar'));
+    td.addEventListener('drop', ev => {
+      ev.preventDefault();
+      td.classList.remove('incar');
+      const m = bawa || bacaMuatan(ev);
+      if (m) taruhPiketUnit(m, td.dataset.hari, Number(td.dataset.jam));
+    });
+    td.addEventListener('click', () => dialogPiketUnitSel(td.dataset.hari, Number(td.dataset.jam)));
+  });
+
+  const tray = $('#puTray');
+  if (tray) {
+    tray.addEventListener('dragover', ev => { ev.preventDefault(); tray.classList.add('incar'); });
+    tray.addEventListener('dragleave', () => tray.classList.remove('incar'));
+    tray.addEventListener('drop', ev => {
+      ev.preventDefault();
+      tray.classList.remove('incar');
+      const m = bawa || bacaMuatan(ev);
+      if (m && m.id) hapusPiketUnit(m.id);
+    });
+  }
+}
+
+function bacaMuatan(ev) {
+  try { return JSON.parse(ev.dataTransfer.getData('text/plain')); } catch (e) { return null; }
+}
+
+/* Satu guru tidak boleh berada di dua tempat pada jam yang sama. Diperiksa di
+   sini karena sumbernya tiga tabel berbeda; pesannya menyebut bentrok apa. */
+function bentrokUnit(guruId, hari, jamKe, kecualiId) {
+  const j = D.jadwal.find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
+  if (j) return `sedang mengajar ${j.mapel || ''} di ${j.kelas || ''}`.replace(/\s+/g, ' ').trim();
+  const m = (D.piketJadwal || []).find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
+  if (m) return 'sedang piket meja sekolah';
+  const u = (D.piketUnit || []).find(x => x.guru_id === guruId && x.hari === hari &&
+    Number(x.jam_ke) === jamKe && String(x.id) !== String(kecualiId));
+  if (u) return `sedang menjaga ${u.unit || 'unit lain'}`;
+  return null;
+}
+
+async function muatPiketUnit() {
+  if (MODE === 'db') D.piketUnit = await ambilSemua('v_jadwal_piket_unit', 'select=*');
+}
+
+function taruhPiketUnit(muatan, hari, jamKe) {
+  const lama = muatan.id ? (D.piketUnit || []).find(p => String(p.id) === String(muatan.id)) : null;
+  const tugasId = lama ? lama.tugas_id : muatan.tugasId;
+  const tugas = D.tugas.find(t => String(t.id) === String(tugasId));
+  if (!tugas) return;
+  if (lama && lama.hari === hari && Number(lama.jam_ke) === jamKe) return;   // tidak pindah ke mana-mana
+
+  jalankan('Menyimpan…', async () => {
+    const sebab = bentrokUnit(tugas.guru_id, hari, jamKe, muatan.id);
+    if (sebab) throw new Error(`${namaGuru(tugas.guru_id)} ${sebab} pada ${hari} jam ke-${jamKe}.`);
+    if ((D.piketUnit || []).some(p => String(p.tugas_id) === String(tugasId) &&
+        p.hari === hari && Number(p.jam_ke) === jamKe))
+      throw new Error(`${tugas.jabatan || 'Unit ini'} sudah terjadwal pada ${hari} jam ke-${jamKe}.`);
+
+    if (MODE === 'contoh') {
+      if (lama) { lama.hari = hari; lama.jam_ke = jamKe; }
+      else D.piketUnit.push({ id: 'PU' + Date.now(), tugas_id: tugasId, hari, jam_ke: jamKe,
+                              guru_id: tugas.guru_id, guru: namaGuru(tugas.guru_id), unit: tugas.jabatan });
+    } else {
+      if (lama) await perbarui('piket_unit', `id=eq.${enc(lama.id)}`, { hari, jam_ke: jamKe });
+      else await simpanBaru('piket_unit', { tugas_id: Number(tugasId), hari, jam_ke: jamKe });
+      await muatPiketUnit();
+    }
+    toast(`${namaPendek(namaGuru(tugas.guru_id))}: ${hari} jam ke-${jamKe}`);
+  });
+}
+
+function hapusPiketUnit(id) {
+  const p = (D.piketUnit || []).find(x => String(x.id) === String(id));
+  if (!p) return;
+  jalankan('Menyimpan…', async () => {
+    if (MODE === 'db') { await buang('piket_unit', `id=eq.${enc(id)}`); await muatPiketUnit(); }
+    else D.piketUnit = D.piketUnit.filter(x => String(x.id) !== String(id));
+    toast(`${namaPendek(p.guru)} dikeluarkan dari ${p.hari} jam ke-${p.jam_ke}`);
+  });
+}
+
+/* Jalan cadangan tanpa seret: mengatur satu sel lewat daftar. */
+function dialogPiketUnitSel(hari, jamKe) {
+  const isi = (D.piketUnit || []).filter(p => p.hari === hari && Number(p.jam_ke) === jamKe);
+  const sudah = new Set(isi.map(p => String(p.tugas_id)));
+  const calon = tugasUnitAktif().filter(t => !sudah.has(String(t.id)));
+
+  bukaModal(`<h2>Piket unit ${esc(hari)} jam ke-${jamKe}</h2><div class="body">
+    ${isi.length ? `<p class="msg kecil">Yang menjaga sekarang:</p>
+      <table class="log"><tbody>${isi.map(p => `<tr>
+        <td style="font-weight:500">${esc(p.guru)}</td>
+        <td class="kecil">${esc(p.unit || '—')}</td>
+        <td style="text-align:right"><button class="btn btn-sm btn-d"
+          data-keluar="${esc(p.id)}">Keluarkan</button></td></tr>`).join('')}</tbody></table>`
+     : '<p class="msg kecil">Belum ada yang menjaga pada jam ini.</p>'}
+
+    <div class="fg" style="margin-top:14px"><label>Tambahkan unit</label>
+      <select class="field" id="puTambah">
+        <option value="">— pilih unit —</option>
+        ${calon.map(t => `<option value="${esc(t.id)}">${esc(t.jabatan || '(unit belum diisi)')} — ${esc(namaGuru(t.guru_id))}</option>`).join('')}
+      </select>
+      <div class="hint">Unit yang sudah terjadwal pada jam ini tidak ditampilkan.</div></div>
+    </div>
+    <div class="aksi"><button class="btn" id="m-batal">Tutup</button>
+      <button class="btn btn-p" id="m-tambah">Tambahkan</button></div>`);
+
+  $('#m-batal').onclick = tutupModal;
+  $$('[data-keluar]').forEach(b => b.onclick = () => { tutupModal(); hapusPiketUnit(b.dataset.keluar); });
+  $('#m-tambah').onclick = () => {
+    const id = $('#puTambah').value;
+    if (!id) { $('#puTambah').focus(); return; }
+    tutupModal();
+    taruhPiketUnit({ tugasId: id }, hari, jamKe);
+  };
 }
 
 /* ------------------------------------------------- piket parkiran */
@@ -2282,11 +2665,7 @@ function halPiketParkiran() {
       <p>Pengawas parkiran sesudah jam pulang — satu petugas per hari kerja.
          Kehadirannya dicatat di aplikasi Kehadiran Guru, halaman Pelaksanaan Piket.</p></div></div>
 
-    <div class="bar">
-      <button class="chip" data-tab="matriks">Matriks jadwal piket</button>
-      <button class="chip" data-tab="ringkasan">Ringkasan</button>
-      <button class="chip on" data-tab="parkiran">Piket parkiran</button>
-    </div>
+    ${barPiket('parkiran')}
 
     ${kosongHari.length ? `<div class="info-box"><b>${kosongHari.length} hari belum ada petugasnya:</b>
       ${esc(kosongHari.join(', '))}. Hari yang kosong tidak bisa dicatat pelaksanaannya.</div>` : ''}
@@ -2320,7 +2699,7 @@ function halPiketParkiran() {
       pada halaman yang sama. Bila petugas berhalangan, penggantinya dicatat saat mengisi pelaksanaan —
       jadwal di sini tidak perlu diubah.</p>`;
 
-  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
+  pasangTabPiket();
   $$('.bAtur').forEach(b => b.onclick = () => formParkiran(b.closest('tr').dataset.hari));
   $$('.bKosong').forEach(b => b.onclick = () => {
     const hari = b.closest('tr').dataset.hari;
@@ -2352,9 +2731,12 @@ function formParkiran(hari) {
     nilai: { guru_id: p ? p.guru_id : '', catatan: p ? (p.catatan || '') : '' },
     kolom: [
       { k: 'guru_id', label: 'Petugas', tipe: 'pilih', wajib: true,
+        // Keterangan ditulis untuk semua, termasuk Tenaga Kependidikan. Kalau
+        // hanya sebagian yang diberi keterangan, nama yang polos terbaca
+        // seperti datanya belum lengkap.
         opsi: [{ v: '', t: '— pilih petugas —' }].concat(calon.map(g => ({
-          v: g.id, t: g.nama + (g.jenis_ptk === 'Tenaga Kependidikan' ? '' : ` (${g.jenis_ptk})`) }))),
-        hint: 'Staf ditampilkan lebih dulu.' },
+          v: g.id, t: g.nama + (g.jenis_ptk ? ` (${g.jenis_ptk})` : '') }))),
+        hint: 'Tenaga kependidikan ditampilkan lebih dulu.' },
       { k: 'catatan', label: 'Catatan (opsional)', tipe: 'panjang',
         hint: 'Misalnya kesepakatan tukar hari.' }
     ],

@@ -79,7 +79,7 @@ Unggah seluruh isi folder ini ke repo GitHub, aktifkan GitHub Pages.
 | Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul |
 | Jadwal KBM | matriks hari × jam, per kelas atau per guru |
 | Kelompok Belajar | Tahsin dan Matematika Dasar beserta anggotanya |
-| Piket & Honor | petugas piket menurut jadwal, komponen honor wali kelas, roster piket parkiran |
+| Piket & Honor | tiga tab: Piket Meja Sekolah (matriks, petugas, komponen honor wali kelas), Piket Unit + Diperbantukan, Piket parkiran |
 | Kelas & Rombel | 18 rombel tahun berjalan |
 | Mata Pelajaran | dibaca dari `kg_mapel`, dipakai bersama jadwal KBM |
 | Jabatan & Unit | pilihan untuk tugas Staf dan Diperbantukan |
