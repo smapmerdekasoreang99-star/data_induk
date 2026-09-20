@@ -38,7 +38,7 @@ const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
 
 let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
-          jenis: [], piket: [], komponen: [],
+          jenis: [], piket: [], komponen: [], parkiran: [],
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
           jadwal: [], jamPel: [], piketJadwal: [], profil: null, galat: {} };
 let halaman = 'beranda';
@@ -176,6 +176,10 @@ async function muatSemua() {
     ]);
     try { D.piketJadwal = await ambilSemua('v_jadwal_piket', 'select=*'); }
     catch (e) { D.piketJadwal = []; console.warn('v_jadwal_piket belum ada:', e.message); }
+    // Roster parkiran ditulis dari halaman ini, jadi kegagalannya tidak
+    // boleh menjatuhkan seluruh halaman piket.
+    try { D.parkiran = await ambil('v_piket_parkiran', 'select=*&order=urutan_hari'); }
+    catch (e) { D.parkiran = []; console.warn('v_piket_parkiran belum ada:', e.message); }
   } catch (e) {
     D.profil = { id:1, nama_sekolah:'SMA Plus "Merdeka" Soreang',
     alamat:'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung', kota:'Soreang',
@@ -312,7 +316,13 @@ function dataContoh() {
       penjelasan:'Ditugaskan khusus menambal jam piket meja sekolah.' },
     { nama:'Pembina Ekskul', perlu_rombel:false, perlu_jabatan:false, piket_sekolah:null,
       piket_libur:false, tambah_jam_mengajar:false, jam_unit:false, hak_transport:false,
-      penjelasan:'Dicatat juga di aplikasi Absensi Ekskul.' }
+      penjelasan:'Dicatat juga di aplikasi Absensi Ekskul.' },
+    { nama:'Pembina OSIS', perlu_rombel:false, perlu_jabatan:false, piket_sekolah:null,
+      piket_libur:false, tambah_jam_mengajar:false, jam_unit:false, hak_transport:false,
+      penjelasan:'Membina OSIS sesudah jam pulang. Belum masuk payroll.' },
+    { nama:'Pembimbing Tahfidz', perlu_rombel:false, perlu_jabatan:false, piket_sekolah:null,
+      piket_libur:false, tambah_jam_mengajar:false, jam_unit:false, hak_transport:false,
+      penjelasan:'Pembinaan Imtaq. Pertemuan dan transportnya di aplikasi Absensi Ekskul.' }
   ];
   D.jabatan = [
     ['Wakasek Kurikulum','Struktural'], ['Wakasek Kesiswaan','Struktural'],
@@ -346,6 +356,10 @@ function dataContoh() {
       hari:'Senin, Rabu, Jumat', staf:false, dihitung_transport:true, dasar:'Wali Kelas' },
     { guru_id:'G003', nama:'Devy Resmisari, S.Pd.', jam_per_minggu:3, jumlah_hari:2,
       hari:'Selasa, Kamis', staf:true, dihitung_transport:false, dasar:'Staf' }
+  ];
+  D.parkiran = [
+    { hari:'Senin',  urutan_hari:1, guru_id:'G003', nama:'Devy Resmisari, S.Pd.', jenis_ptk:'Guru Tetap Yayasan', status_aktif:'Aktif', catatan:null },
+    { hari:'Selasa', urutan_hari:2, guru_id:'G003', nama:'Devy Resmisari, S.Pd.', jenis_ptk:'Guru Tetap Yayasan', status_aktif:'Aktif', catatan:null }
   ];
   D.komponen = [
     { guru_id:'G001', nama:'Dra. Siti Aminah, M.Pd.', komponen:'UPACARA',   jam_per_minggu:1, asal_angka:'bawaan', belum_diisi:false },
@@ -1270,6 +1284,7 @@ function halPiketMatriks() {
     <div class="bar">
       <button class="chip on" data-tab="matriks">Matriks jadwal piket</button>
       <button class="chip" data-tab="ringkasan">Ringkasan</button>
+      <button class="chip" data-tab="parkiran">Piket parkiran</button>
       <div class="sp" style="flex:1"></div>
       ${dasarAda.map(d => {
         const w = warnaDasar(d);
@@ -2163,6 +2178,7 @@ function halPiket() {
   });
 
   if ((ui.piketTab || 'matriks') === 'matriks') return halPiketMatriks();
+  if (ui.piketTab === 'parkiran') return halPiketParkiran();
 
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Piket &amp; Komponen Honor</h1>
@@ -2172,6 +2188,7 @@ function halPiket() {
     <div class="bar">
       <button class="chip" data-tab="matriks">Matriks jadwal piket</button>
       <button class="chip on" data-tab="ringkasan">Ringkasan</button>
+      <button class="chip" data-tab="parkiran">Piket parkiran</button>
     </div>
 
     ${belumDasar.length ? `<div class="info-box"><b>${belumDasar.length} guru ada di jadwal piket
@@ -2244,6 +2261,122 @@ function halPiket() {
     const x = D.komponen.find(c => String(c.tugas_id) === el.dataset.tugas
                                 && c.komponen === el.dataset.komponen);
     if (x) formKomponen(x);
+  });
+}
+
+/* ------------------------------------------------- piket parkiran */
+/* Roster pengawas parkiran sesudah jam pulang: satu petugas per hari kerja,
+   sekitar 30 menit. Sengaja tidak ikut tabel `piket` maupun guru_tugas —
+   satuannya per hari (bukan per jam pelajaran), dan petugasnya staf, yang
+   pada kedua jalur itu justru gugur dari perhitungan honor.
+   Kehadiran hariannya dicatat di aplikasi Kehadiran Guru.              */
+function halPiketParkiran() {
+  const HR = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+  const petugas = h => (D.parkiran || []).find(p => p.hari === h);
+  const kosongHari = HR.filter(h => !petugas(h));
+  const orang = new Set((D.parkiran || []).map(p => p.guru_id));
+  const hariNyata = ['Minggu', ...HARI][new Date().getDay()];
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Piket Parkiran</h1>
+      <p>Pengawas parkiran sesudah jam pulang — satu petugas per hari kerja.
+         Kehadirannya dicatat di aplikasi Kehadiran Guru, halaman Pelaksanaan Piket.</p></div></div>
+
+    <div class="bar">
+      <button class="chip" data-tab="matriks">Matriks jadwal piket</button>
+      <button class="chip" data-tab="ringkasan">Ringkasan</button>
+      <button class="chip on" data-tab="parkiran">Piket parkiran</button>
+    </div>
+
+    ${kosongHari.length ? `<div class="info-box"><b>${kosongHari.length} hari belum ada petugasnya:</b>
+      ${esc(kosongHari.join(', '))}. Hari yang kosong tidak bisa dicatat pelaksanaannya.</div>` : ''}
+
+    <div class="kartu-baris">
+      <div class="kartu"><b>${HR.length - kosongHari.length}</b><span>hari sudah ada petugas</span></div>
+      <div class="kartu"><b>${orang.size}</b><span>petugas terlibat</span></div>
+    </div>
+
+    <div class="panel"><div class="panel-head"><h3>Jadwal petugas</h3>
+      <div class="sp" style="flex:1"></div><div class="info">Senin–Jumat</div></div>
+      <div class="scroll"><table><thead><tr>
+        <th style="width:110px">Hari</th><th>Petugas</th>
+        <th style="width:180px" class="hide-sm">Jenis PTK</th>
+        <th class="hide-sm">Catatan</th><th style="width:170px"></th>
+      </tr></thead><tbody>${HR.map(h => {
+        const p = petugas(h);
+        const nonaktif = p && p.status_aktif !== 'Aktif';
+        return `<tr data-hari="${esc(h)}" class="${nonaktif ? 'bad' : ''}">
+          <td><span class="tag tag-l">${esc(h)}</span>${h === hariNyata ? ' <span class="kecil">hari ini</span>' : ''}</td>
+          <td style="font-weight:500">${p ? esc(p.nama) : '<span class="kecil">belum ada petugas</span>'}</td>
+          <td class="hide-sm kecil">${p ? esc(p.jenis_ptk || '—') : '—'}${
+            nonaktif ? ` · <span style="color:var(--warn)">${esc(p.status_aktif)}</span>` : ''}</td>
+          <td class="hide-sm kecil">${p && p.catatan ? esc(p.catatan) : ''}</td>
+          <td class="act"><button class="btn btn-sm bAtur">${p ? 'Ubah' : 'Tetapkan'}</button>
+            ${p ? '<button class="btn btn-sm btn-d bKosong">Kosongkan</button>' : ''}</td></tr>`;
+      }).join('')}</tbody></table></div></div>
+
+    <p class="kecil">Kompensasinya dihitung per hari petugas benar-benar hadir, bukan per hari terjadwal.
+      Besar tarifnya diatur di <b>Kehadiran Guru → Rekap → Pengaturan</b>, dan rekapnya ada di tab Piket
+      pada halaman yang sama. Bila petugas berhalangan, penggantinya dicatat saat mengisi pelaksanaan —
+      jadwal di sini tidak perlu diubah.</p>`;
+
+  $$('[data-tab]').forEach(b => b.onclick = () => { ui.piketTab = b.dataset.tab; gambar(); });
+  $$('.bAtur').forEach(b => b.onclick = () => formParkiran(b.closest('tr').dataset.hari));
+  $$('.bKosong').forEach(b => b.onclick = () => {
+    const hari = b.closest('tr').dataset.hari;
+    konfirmasi({
+      judul: 'Kosongkan petugas', tombol: 'Kosongkan',
+      pesan: `Hari ${esc(hari)} tidak akan punya petugas parkiran. Catatan pelaksanaan yang sudah tersimpan tetap ada.`,
+      lanjut: async () => {
+        if (MODE === 'db') await buang('piket_parkiran', `hari=eq.${enc(hari)}`);
+        D.parkiran = (D.parkiran || []).filter(p => p.hari !== hari);
+        if (MODE === 'db') await muatSemua();
+        toast(`Petugas ${hari} dikosongkan`);
+      }
+    });
+  });
+}
+
+function formParkiran(hari) {
+  const p = (D.parkiran || []).find(x => x.hari === hari);
+  // Selama ini petugasnya selalu staf, jadi staf didahulukan — tetapi guru
+  // lain tetap bisa dipilih supaya tidak menghalangi keadaan darurat.
+  const urut = g => (g.jenis_ptk === 'Tenaga Kependidikan' ? 0 : 1);
+  const calon = D.guru.filter(g => g.status_aktif === 'Aktif')
+    .sort((a, b) => urut(a) - urut(b) || a.nama.localeCompare(b.nama, 'id'));
+
+  formulir({
+    judul: `Petugas parkiran — ${hari}`,
+    catatan: 'Mengawasi parkiran sesudah jam pulang, sekitar 30 menit: memastikan siswa segera pulang, '
+           + 'tidak merokok atau nongkrong.',
+    nilai: { guru_id: p ? p.guru_id : '', catatan: p ? (p.catatan || '') : '' },
+    kolom: [
+      { k: 'guru_id', label: 'Petugas', tipe: 'pilih', wajib: true,
+        opsi: [{ v: '', t: '— pilih petugas —' }].concat(calon.map(g => ({
+          v: g.id, t: g.nama + (g.jenis_ptk === 'Tenaga Kependidikan' ? '' : ` (${g.jenis_ptk})`) }))),
+        hint: 'Staf ditampilkan lebih dulu.' },
+      { k: 'catatan', label: 'Catatan (opsional)', tipe: 'panjang',
+        hint: 'Misalnya kesepakatan tukar hari.' }
+    ],
+    simpan: async n => {
+      if (!n.guru_id) throw new Error('Petugas wajib dipilih.');
+      const isi = { hari, guru_id: n.guru_id, catatan: n.catatan ? n.catatan.trim() : null,
+                    diubah_pada: new Date().toISOString() };
+      if (MODE === 'contoh') {
+        const g = D.guru.find(x => x.id === n.guru_id) || {};
+        D.parkiran = (D.parkiran || []).filter(x => x.hari !== hari)
+          .concat([{ ...isi, nama: g.nama, jenis_ptk: g.jenis_ptk, status_aktif: g.status_aktif,
+                     urutan_hari: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].indexOf(hari) + 1 }])
+          .sort((a, b) => a.urutan_hari - b.urutan_hari);
+      } else {
+        await api('/rest/v1/piket_parkiran?on_conflict=hari', {
+          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' },
+          body: JSON.stringify([isi])
+        });
+        await muatSemua();
+      }
+      toast(`Petugas parkiran ${hari}: ${namaGuru(n.guru_id)}`);
+    }
   });
 }
 
