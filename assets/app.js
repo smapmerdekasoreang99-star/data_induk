@@ -157,7 +157,7 @@ async function muatSemua() {
   if (aktif) sesi.ta = aktif.kode;
 
   const [guru, rombel, mapel, tugas, jabatan, jenis] = await Promise.all([
-    ambil('guru', 'select=' + KOLOM_GURU + '&order=nama'),
+    ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc'),
     ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
     ambil('mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
     ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
@@ -289,16 +289,19 @@ function dataContoh() {
   D.mapel = [['MAT','Matematika','MIPA'],['BIND','Bahasa Indonesia','Bahasa'],
              ['KIM','Kimia','MIPA'],['PJOK','PJOK','Umum'],['SEJ','Sejarah','IPS']]
     .map(([id, nama, rumpun]) => ({ id, nama, rumpun }));
+  // TMT sengaja dibuat berbeda-beda supaya urutan menurut masa kerja terlihat
+  // di mode contoh; daftarnya ditulis acak agar pengurutannya benar-benar teruji.
   D.guru = [
-    ['G001','1','Dra. Siti Aminah, M.Pd.','Matematika','Guru Tetap Yayasan','P'],
-    ['G002','2','Ahmad Fauzi, S.Pd.','PJOK','Guru Tidak Tetap','L'],
-    ['G003','3','Devy Resmisari, S.Pd.','Sejarah','Guru Tetap Yayasan','P'],
-    ['G004','4','Rina Sulastri, S.Si.','Kimia','Guru Tetap Yayasan','P']
-  ].map(([id, nig, nama, mapel, ptk, jk]) =>
+    ['G001','1','Dra. Siti Aminah, M.Pd.','Matematika','Guru Tetap Yayasan','P','2010-07-12'],
+    ['G002','2','Ahmad Fauzi, S.Pd.','PJOK','Guru Tidak Tetap','L','2021-07-12'],
+    ['G003','3','Devy Resmisari, S.Pd.','Sejarah','Guru Tetap Yayasan','P','2004-07-19'],
+    ['G004','4','Rina Sulastri, S.Si.','Kimia','Guru Tetap Yayasan','P','2016-07-18']
+  ].map(([id, nig, nama, mapel, ptk, jk, tmt]) =>
     ({ id, nig, nama, mapel_utama: mapel, jenis_ptk: ptk, jenis_kelamin: jk,
-       status_aktif: 'Aktif', tmt_sekolah: '2018-07-16', tmt_guru: '2016-07-18',
+       status_aktif: 'Aktif', tmt_sekolah: tmt, tmt_guru: tmt,
        nip: '', nuptk: '', pendidikan_terakhir: 'S1', jurusan: '', linier: true,
-       no_sertifikat_pendidik: '', no_hp: '', email: '', catatan: '' }));
+       no_sertifikat_pendidik: '', no_hp: '', email: '', catatan: '' }))
+    .sort(urutGuru);
 
   D.jenis = [
     { nama:'Wali Kelas', perlu_rombel:true, perlu_jabatan:false, piket_sekolah:'Melekat',
@@ -966,7 +969,7 @@ function formGuru(id) {
         const d = await simpanBaru('guru', { id: idBaru, nig: n.nig, ...isi });
         D.guru.push(d[0]);
       }
-      D.guru.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+      D.guru.sort(urutGuru);
       toast(id ? 'Data guru diperbarui' : 'Guru ditambahkan');
     }
   });
@@ -997,11 +1000,12 @@ function belumLengkap(t) {
 }
 
 function halTugas() {
+  const peringkat = peringkatGuru();
   const data = D.tugas
     .filter(t => !ui.jenisTugas || t.jenis === ui.jenisTugas)
     .filter(t => !ui.guruTugas || t.guru_id === ui.guruTugas)
     .sort((a, b) => (a.jenis || '').localeCompare(b.jenis || '')
-                 || namaGuru(a.guru_id).localeCompare(namaGuru(b.guru_id), 'id'));
+                 || peringkat(a.guru_id) - peringkat(b.guru_id));
 
   const piket = D.piket;   // dari jadwal, bukan disimpulkan dari jenis tugas
   const unit  = D.tugas.filter(t => t.aktif && sifat(t.jenis, 'jam_unit'));
@@ -1249,6 +1253,7 @@ function halPiketMatriks() {
 
   const hariNyata = ['Minggu', ...HARI][new Date().getDay()];
   const sekarang = jamBerjalan();
+  const peringkat = peringkatGuru();
 
   // Tiap petugas menempati satu lajur dalam baris hari, jadi jam berturut-turut
   // orang yang sama tersambung jadi satu pita. Petugas yang jam jaganya tidak
@@ -1261,7 +1266,7 @@ function halPiketMatriks() {
       rentang.set(p.guru_id, { a: Math.min(r.a, p.jam_ke), b: Math.max(r.b, p.jam_ke) });
     });
     const petugas = [...rentang.keys()].sort((x, y) => rentang.get(x).a - rentang.get(y).a ||
-      namaGuru(x).localeCompare(namaGuru(y), 'id'));
+      peringkat(x) - peringkat(y));
     const akhirLajur = [], lajurDari = new Map();
     petugas.forEach(g => {
       let i = akhirLajur.findIndex(akhir => akhir < rentang.get(g).a);
@@ -1423,8 +1428,8 @@ function keluarkanPiketMeja(id) {
 function dialogPiketSel(hari, jamKe) {
   const isi = (D.piketJadwal || []).filter(p => p.hari === hari && p.jam_ke === jamKe);
   const sudah = new Set(isi.map(p => p.guru_id));
-  const calon = D.guru.filter(g => g.status_aktif === 'Aktif' && !sudah.has(g.id))
-                      .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+  // D.guru sudah urut masa kerja, jadi penyaringan saja sudah cukup.
+  const calon = D.guru.filter(g => g.status_aktif === 'Aktif' && !sudah.has(g.id));
 
   bukaModal(`<h2>Piket ${esc(hari)} jam ke-${jamKe}</h2><div class="body">
     ${isi.length ? `<p class="msg kecil">Yang berjaga sekarang:</p>
@@ -1577,6 +1582,27 @@ function namaPendek(nama) {
 }
 const urutNama = (a, b) => a.localeCompare(b, 'id', { numeric: true });
 
+/* Kebiasaan sekolah: daftar guru disusun menurut masa kerja, yang paling lama
+   lebih dulu. Dasarnya tmt_sekolah — masa kerja di sekolah lain tidak diakui,
+   jadi itulah satu-satunya ukuran masa kerja di seluruh aplikasi.
+   Yang TMT-nya belum diisi ditaruh paling akhir, bukan di depan; dan karena
+   ada TMT yang dipakai beberapa guru, namanya selalu jadi pemecah seri. */
+function urutGuru(a, b) {
+  const ta = (a && a.tmt_sekolah) || '', tb = (b && b.tmt_sekolah) || '';
+  if (ta !== tb) {
+    if (!ta) return 1;
+    if (!tb) return -1;
+    return ta < tb ? -1 : 1;
+  }
+  return urutNama(String((a && a.nama) || ''), String((b && b.nama) || ''));
+}
+/* Peringkat menurut D.guru yang sudah urut, untuk daftar turunan yang hanya
+   membawa guru_id. */
+const peringkatGuru = () => {
+  const p = new Map(D.guru.map((g, i) => [g.id, i]));
+  return id => (p.has(id) ? p.get(id) : Number.MAX_SAFE_INTEGER);
+};
+
 function halJadwal() {
   const sudut = ui.jadwalSudut || 'kelas';          // 'kelas', 'guru', atau 'hari'
   // Semester bawaan mengikuti isi datanya, bukan ditebak.
@@ -1608,9 +1634,9 @@ function halJadwal() {
           (a.jenis === b.jenis ? 0 : a.jenis === 'Rombel' ? -1 : 1) || urutNama(a.nama, b.nama));
       })()
     : sudut === 'guru'
+      // D.guru sudah urut masa kerja; sumbu "Per guru" ikut urutan itu.
       ? D.guru.filter(g => g.status_aktif === 'Aktif')
               .map(g => ({ id: g.id, nama: g.nama, jenis: '' }))
-              .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
       : [];
 
   const pilih = ui.jadwalPilih || (daftar[0] && daftar[0].nama) || '';
@@ -2269,17 +2295,21 @@ function unduhRekapKelompok() {
 
 /* --------------------------------------------------- piket & honor */
 function halPiket() {
+  const peringkat = peringkatGuru();
   const totJam = D.piket.reduce((a, p) => a + (p.jam_per_minggu || 0), 0);
   const dibayar = D.piket.filter(p => p.dihitung_transport);
   const belumDasar = D.piket.filter(p => p.dasar === 'belum tercatat');
   const belumIsi = D.komponen.filter(k => k.belum_diisi);
 
-  // komponen dikelompokkan per guru
+  // Komponen dikelompokkan per guru, dikunci guru_id — bukan nama — supaya
+  // urutannya bisa mengikuti masa kerja seperti daftar guru lainnya.
   const perGuru = new Map();
-  D.komponen.forEach(k => {
-    if (!perGuru.has(k.nama)) perGuru.set(k.nama, {});
-    perGuru.get(k.nama)[k.komponen] = k;
-  });
+  D.komponen.slice()
+    .sort((a, b) => peringkat(a.guru_id) - peringkat(b.guru_id))
+    .forEach(k => {
+      if (!perGuru.has(k.guru_id)) perGuru.set(k.guru_id, { nama: k.nama });
+      perGuru.get(k.guru_id)[k.komponen] = k;
+    });
 
   if (ui.piketTab === 'unit') return halPiketUnit();
   if (ui.piketTab === 'parkiran') return halPiketParkiran();
@@ -2313,7 +2343,7 @@ function halPiket() {
         <th style="width:190px" class="hide-sm">Hari</th>
         <th style="width:150px">Dasar</th><th style="width:150px">Transport</th>
       </tr></thead><tbody>${
-        D.piket.length ? D.piket.slice().sort((a, b) => b.jam_per_minggu - a.jam_per_minggu)
+        D.piket.length ? D.piket.slice().sort((a, b) => peringkat(a.guru_id) - peringkat(b.guru_id))
           .map(p => `<tr class="${p.dasar === 'belum tercatat' ? 'bad' : ''}">
             <td style="font-weight:500">${esc(p.nama)}</td>
             <td class="num">${p.jam_per_minggu}</td>
@@ -2353,7 +2383,8 @@ function halPiketKomponen(perGuru, belumIsi) {
         <th>Guru</th><th style="width:110px">Upacara</th>
         <th style="width:140px">Bimbingan</th><th style="width:150px">Piket</th>
       </tr></thead><tbody>${
-        perGuru.size ? [...perGuru.entries()].map(([nama, k]) => {
+        perGuru.size ? [...perGuru.values()].map(k => {
+          const nama = k.nama;
           const sel = kode => {
             const x = k[kode];
             if (!x) return '<span class="kecil">—</span>';
@@ -2722,7 +2753,7 @@ function formParkiran(hari) {
   // lain tetap bisa dipilih supaya tidak menghalangi keadaan darurat.
   const urut = g => (g.jenis_ptk === 'Tenaga Kependidikan' ? 0 : 1);
   const calon = D.guru.filter(g => g.status_aktif === 'Aktif')
-    .sort((a, b) => urut(a) - urut(b) || a.nama.localeCompare(b.nama, 'id'));
+    .sort((a, b) => urut(a) - urut(b) || urutGuru(a, b));
 
   formulir({
     judul: `Petugas parkiran — ${hari}`,
