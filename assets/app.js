@@ -2143,7 +2143,7 @@ function halKelompok() {
     ${D.belumKelompok.length ? `<div class="info-box"><b>${D.belumKelompok.length} siswa belum masuk kelompok</b>
       dan belum tercatat pengecualiannya. Sebagian mungkin memang tidak mengikuti program —
       catat pengecualiannya supaya peringatan ini hanya menunjuk yang benar-benar terlewat.
-      <button class="linkish" id="bLihatBelum" style="color:#6B4700">Lihat daftarnya</button></div>` : ''}
+      <button class="linkish" id="bLihatBelum">Lihat daftarnya</button></div>` : ''}
 
     <div class="kartu-baris">
       <div class="kartu"><b>${D.kelompok.length}</b><span>kelompok</span></div>
@@ -3177,7 +3177,7 @@ function pasangEditorKop() {
 
     kertas.style.height = (susun.tinggi + 150) + 'px';
     kertas.innerHTML = `
-      <div class="kop-benda kop-teks" id="kopTeks"
+      <div class="kop-benda" id="kopTeks"
            style="${rataGaya(TL.teks.rata)};top:${atasTeks}px;height:${tinggiTeks}px">
         <div style="font-size:${TL.teks.ukuranNama}pt;font-weight:700;line-height:${bNama.px}px">
           ${esc(p.nama_sekolah || 'Nama sekolah belum diisi')}</div>
