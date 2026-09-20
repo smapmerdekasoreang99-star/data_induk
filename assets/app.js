@@ -38,7 +38,7 @@ const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
 
 let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
-          jenis: [], piket: [], komponen: [], parkiran: [], piketUnit: [],
+          jenis: [], piket: [], komponen: [], parkiran: [], piketUnit: [], ttd: {},
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
           jadwal: [], jamPel: [], piketJadwal: [], profil: null, galat: {} };
 let halaman = 'beranda';
@@ -182,6 +182,9 @@ async function muatSemua() {
     catch (e) { D.parkiran = []; console.warn('v_piket_parkiran belum ada:', e.message); }
     try { D.piketUnit = await ambilSemua('v_jadwal_piket_unit', 'select=*'); }
     catch (e) { D.piketUnit = []; console.warn('v_jadwal_piket_unit belum ada:', e.message); }
+    // Penanda tangan dokumen, diturunkan dari jabatan aktif di guru_tugas.
+    try { D.ttd = (await ambil('v_penanda_tangan', 'select=*&limit=1'))[0] || {}; }
+    catch (e) { D.ttd = {}; console.warn('v_penanda_tangan belum ada:', e.message); }
   } catch (e) {
     D.profil = { id:1, nama_sekolah:'SMA Plus "Merdeka" Soreang',
     alamat:'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung', kota:'Soreang',
@@ -1918,12 +1921,6 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
     const mapelUrut = [...new Set(D.jadwal.map(j => j.mapel))].sort();
     const warna = m => WARNA_RUMPUN[mapelUrut.indexOf(m) % WARNA_RUMPUN.length];
 
-    let logoId = null;
-    try {
-      const gbr = await fetch(SEKOLAH.logo).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
-      logoId = wb.addImage({ buffer: gbr, extension: 'png' });
-    } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
-
     for (const nama of daftarNama) {
       const baris = D.jadwal.filter(j => j.semester == smt &&
         (sudut === 'kelas' ? j.kelas === nama : j.guru === nama));
@@ -3061,12 +3058,12 @@ function formJabatan(j) {
 /* --------------------------------------------------- profil dokumen */
 function halProfil() {
   const p = D.profil || {};
-  const contoh = (D.jadwal[0] || {});
 
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Profil Dokumen</h1>
-      <p>Identitas sekolah yang dipakai pada kop seluruh berkas Excel yang diunduh
-         aplikasi ini — jadwal KBM, jadwal piket, rekap, dan cadangan data.</p></div>
+      <p>Identitas sekolah dan tata letak kop yang dipakai seluruh berkas yang diunduh
+         — di aplikasi ini maupun di Kehadiran Guru, Absensi Ekstrakurikuler,
+         dan Induk Pembiayaan.</p></div>
       <div class="sp"></div>
       <button class="btn btn-p" id="bUbahProfil">Ubah profil</button></div>
 
@@ -3074,37 +3071,20 @@ function halProfil() {
       ${esc(D.galat.profil)}<br>Kemungkinan berkas <code>41_profil_dokumen.sql</code> belum dijalankan.
       Sementara ini kop memakai nilai bawaan yang tertulis di dalam aplikasi.</div>` : ''}
 
-    <div class="panel"><div class="panel-head"><h3>Yang tercetak pada kop</h3></div>
+    <div class="panel"><div class="panel-head"><h3>Tata letak kop</h3>
+      <div class="sp" style="flex:1"></div>
+      <div class="info" id="kopStatus">belum ada perubahan</div>
+      <button class="btn" id="bKopBawaan">Kembalikan ke bawaan</button>
+      <button class="btn btn-p" id="bKopSimpan">Simpan tata letak</button></div>
       <div class="panel-body">
-        <div style="border:1px solid var(--line);border-radius:8px;padding:18px;background:#fff">
-          <div style="display:flex;gap:16px;align-items:flex-start">
-            <div style="width:62px;height:62px;border:1px dashed var(--line);border-radius:6px;
-                        display:flex;align-items:center;justify-content:center;flex:none;
-                        overflow:hidden;background:#F7FAF9">
-              <img src="${esc(SEKOLAH.logo)}" alt="" style="max-width:100%;max-height:100%"
-                   onerror="this.style.display='none';this.parentNode.innerHTML='<span class=&quot;kecil&quot;>logo</span>'">
-            </div>
-            <div style="flex:1">
-              <div style="font-size:17px;font-weight:600">${esc(SEKOLAH.nama || '—')}</div>
-              <div class="kecil">${esc([SEKOLAH.alamat, SEKOLAH.npsn ? 'NPSN ' + SEKOLAH.npsn : '']
-                                       .filter(Boolean).join('  ·  ') || '—')}</div>
-            </div>
-          </div>
-          <div style="text-align:center;margin:16px 0 6px;border-top:2px solid var(--ink);padding-top:14px">
-            <div style="font-size:15px;font-weight:600">JADWAL KEGIATAN BELAJAR MENGAJAR</div>
-            <div class="kecil">Kelas 10-1 · Semester 1 · Tahun Pelajaran ${esc(sesi.ta)}</div>
-          </div>
-          <div style="text-align:right;margin-top:18px">
-            <div class="kecil">${esc(SEKOLAH.kota || '—')}, ${new Date().toLocaleDateString('id-ID',
-              { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-            <div class="kecil">Kepala Sekolah,</div>
-            <div style="height:34px"></div>
-            <div style="font-weight:600;text-decoration:underline">${esc(SEKOLAH.kepala || '—')}</div>
-            ${SEKOLAH.nip ? `<div class="kecil">NIP. ${esc(SEKOLAH.nip)}</div>` : ''}
-          </div>
-        </div>
-        <p class="kecil" style="margin-top:10px">Tampilan di atas meniru kop berkas Excel,
-          termasuk letak logo dan blok tanda tangan.</p>
+        <p class="kecil" style="margin-top:0">Seret <b>logo</b> dan <b>tulisan kop</b> di bawah ini
+          ke tempat yang dikehendaki. Yang terlihat di sini sama dengan yang keluar di berkas.</p>
+        <div class="kop-atur" id="kopAtur"></div>
+        <div class="kop-kertas-bungkus"><div class="kop-kertas" id="kopKertas"></div></div>
+        <p class="kecil">Lebar di atas mewakili satu halaman A4 tegak. Laporan yang mendatar
+          lebih lebar, tetapi jarak tulisan dari tepi kiri tetap sama seperti yang terlihat di sini.
+          Excel hanya bisa menggeser tulisan per 10 piksel, jadi letaknya dibulatkan ke angka itu —
+          selisihnya paling banyak setengah milimeter.</p>
       </div></div>
 
     <div class="panel"><div class="panel-head"><h3>Isian</h3></div>
@@ -3117,11 +3097,259 @@ function halProfil() {
             <td style="font-weight:500">${v ? esc(v) : '<span class="kecil">belum diisi</span>'}</td></tr>`).join('')}
       </tbody></table></div></div>
 
+    <div class="panel"><div class="panel-head"><h3>Penanda tangan dokumen</h3>
+      <div class="sp" style="flex:1"></div><div class="info">dari Tugas Guru</div></div>
+      <div class="scroll"><table><tbody>
+        ${[['Kepala Sekolah', p.kepala_sekolah, 'Profil Dokumen'],
+           ['Wakasek Kurikulum', (D.ttd || {}).kurikulum, 'Tugas Guru'],
+           ['Wakasek Kesiswaan', (D.ttd || {}).kesiswaan, 'Tugas Guru'],
+           ['Bendahara', (D.ttd || {}).bendahara, 'Tugas Guru']]
+          .map(([l, v, asal]) => `<tr><td style="width:210px;color:var(--ink2)">${esc(l)}</td>
+            <td style="font-weight:500">${v ? esc(v)
+              : '<span class="kecil" style="color:var(--warn)">belum ada pemegangnya</span>'}</td>
+            <td style="width:140px" class="kecil">${esc(asal)}</td></tr>`).join('')}
+      </tbody></table></div></div>
+
+    <p class="kecil">Nama ketiga pejabat di atas <b>tidak diketik di sini</b> — diturunkan dari
+      jabatan yang berlaku di halaman <b>Tugas Guru</b>. Mengganti pejabat cukup dilakukan di
+      sana, dan seluruh dokumen di semua aplikasi langsung ikut. Kalau disimpan dua kali,
+      cepat atau lambat keduanya akan berbeda tanpa ada yang menyadari.</p>
+
     <p class="kecil">Logo diambil dari berkas yang disebut pada isian <b>Berkas logo</b>,
       relatif terhadap letak aplikasi — biasanya <code>assets/logo.png</code>.
       Bila berkasnya tidak ada, berkas Excel tetap terbentuk tanpa logo.</p>`;
 
   $('#bUbahProfil').onclick = () => formProfil();
+  pasangEditorKop();
+}
+
+/* ------------------------------------------------ editor tata letak kop
+   Pratinjau yang bisa diseret. Susunan barisnya dihitung oleh
+   KopDokumen.susunanKop — fungsi yang sama yang dipakai penulis berkas
+   Excel — sehingga apa yang terlihat di sini tidak bisa menyimpang dari
+   apa yang tercetak.                                                    */
+const LEBAR_KERTAS = 720;   // kira-kira lebar daerah cetak A4 tegak, dalam piksel
+
+function pasangEditorKop() {
+  const K = window.KopDokumen;
+  if (!K) return;   // berkas kop-dokumen.js belum termuat
+
+  const p = D.profil || {};
+  const asli = JSON.stringify(K.tataLetak(p.tata_letak));
+  let TL = JSON.parse(asli);
+
+  const JUDUL_CONTOH = 'DAFTAR HADIR GURU';
+  const SUB_CONTOH = 'BULAN : SEPTEMBER 2026';
+
+  const kertas = $('#kopKertas');
+  const status = $('#kopStatus');
+
+  const berubah = () => JSON.stringify(TL) !== asli;
+  const tandai = () => {
+    status.textContent = berubah() ? 'ada perubahan yang belum disimpan' : 'belum ada perubahan';
+    status.style.color = berubah() ? 'var(--warn)' : '';
+  };
+  /* Selama menyeret atau menggeser penggaris, hanya pratinjau yang
+     digambar ulang. Tombol pengaturnya dibiarkan utuh supaya penggaris
+     yang sedang dipegang tidak ikut terhapus dari bawah jari. */
+  const segarRingan = () => { tandai(); gambar(); };
+  const segar = () => { segarRingan(); atur(); };
+
+  // ---------------------------------------------------------- pratinjau
+  function gambar() {
+    const susun = K.susunanKop(TL, p, JUDUL_CONTOH, SUB_CONTOH);
+    const baris = susun.baris;
+    const nomor = n => baris[n - 1];
+
+    const rataGaya = r => r === 'tengah' ? 'left:0;right:0;text-align:center'
+                        : r === 'kanan'  ? 'left:0;right:0;text-align:right'
+                        : `left:${TL.teks.x}px;right:0;text-align:left`;
+
+    const bNama = nomor(susun.indeks.nama);
+    const bIdentitas = susun.indeks.identitas.map(nomor);
+    const bJudul = susun.indeks.judul ? nomor(susun.indeks.judul) : null;
+    const bSub = susun.indeks.sub ? nomor(susun.indeks.sub) : null;
+    const bGaris = susun.indeks.garis ? nomor(susun.indeks.garis) : null;
+
+    const atasTeks = bNama.atas;
+    const akhirTeks = bIdentitas.length ? bIdentitas[bIdentitas.length - 1] : bNama;
+    const tinggiTeks = akhirTeks.atas + akhirTeks.px - atasTeks;
+
+    kertas.style.height = (susun.tinggi + 150) + 'px';
+    kertas.innerHTML = `
+      ${TL.logo.tampil ? `<div class="kop-benda kop-logo" id="kopLogo"
+           style="left:${TL.logo.x}px;top:${TL.logo.y}px;width:${TL.logo.ukuran}px;height:${TL.logo.ukuran}px">
+           <img src="${esc(SEKOLAH.logo)}" alt="" draggable="false"
+                onerror="this.style.display='none'">
+           <span class="kop-pegangan" id="kopUbahUkuran" title="Tarik untuk mengubah ukuran"></span>
+         </div>` : ''}
+
+      <div class="kop-benda kop-teks" id="kopTeks"
+           style="${rataGaya(TL.teks.rata)};top:${atasTeks}px;height:${tinggiTeks}px">
+        <div style="font-size:${TL.teks.ukuranNama}pt;font-weight:700;line-height:${bNama.px}px">
+          ${esc(p.nama_sekolah || 'Nama sekolah belum diisi')}</div>
+        ${bIdentitas.map((b, i) => `<div style="font-size:${TL.teks.ukuranAlamat}pt;
+          color:var(--ink2);line-height:${b.px}px">${esc(susun.identitas[i])}</div>`).join('')}
+      </div>
+
+      ${bJudul ? `<div class="kop-mati" style="${rataGaya(TL.judul.rata)};top:${bJudul.atas}px;
+        height:${bJudul.px}px;line-height:${bJudul.px}px;font-size:${TL.judul.ukuran}pt;
+        font-weight:700">${esc(JUDUL_CONTOH)}</div>` : ''}
+      ${bSub ? `<div class="kop-mati" style="${rataGaya(TL.judul.rata)};top:${bSub.atas}px;
+        height:${bSub.px}px;line-height:${bSub.px}px;font-size:10pt;color:var(--ink2)"
+        >${esc(SUB_CONTOH)}</div>` : ''}
+      ${bGaris ? `<div class="kop-garis" style="top:${bGaris.atas + bGaris.px - 2}px"></div>` : ''}
+
+      <div class="kop-tabel" style="top:${susun.tinggi + 10}px">
+        <div class="kop-tabel-kepala">NO &nbsp;·&nbsp; NAMA &nbsp;·&nbsp; JUMLAH</div>
+        <div class="kop-tabel-baris"></div>
+        <div class="kop-tabel-baris"></div>
+      </div>
+      ${TL.kaki.tampil && p.catatan_kaki ? `<div class="kop-mati kop-kaki"
+        style="left:0;right:0;top:${susun.tinggi + 96}px;text-align:${
+          TL.kaki.rata === 'kiri' ? 'left' : TL.kaki.rata === 'kanan' ? 'right' : 'center'}"
+        >${esc(p.catatan_kaki)}</div>` : ''}`;
+
+    if (TL.logo.tampil) {
+      seret($('#kopLogo'), (dx, dy, awal) => {
+        TL.logo.x = Math.max(0, Math.min(LEBAR_KERTAS - TL.logo.ukuran, awal.x + dx));
+        TL.logo.y = Math.max(0, Math.min(200, awal.y + dy));
+      }, () => ({ x: TL.logo.x, y: TL.logo.y }), '#kopUbahUkuran');
+
+      seret($('#kopUbahUkuran'), (dx, dy, awal) => {
+        TL.logo.ukuran = Math.max(20, Math.min(140, awal.u + Math.round((dx + dy) / 2)));
+      }, () => ({ u: TL.logo.ukuran }));
+    }
+
+    // Tulisan hanya bisa digeser mendatar bila perataannya kiri; kalau
+    // rata tengah atau kanan, letaknya ditentukan lebar halaman.
+    seret($('#kopTeks'), (dx, dy, awal) => {
+      if (TL.teks.rata === 'kiri') {
+        const L = K.LANGKAH_GESER;
+        TL.teks.x = Math.max(0, Math.min(LEBAR_KERTAS - 120,
+          Math.round((awal.x + dx) / L) * L));
+      }
+      TL.teks.y = Math.max(0, Math.min(200, Math.round((awal.y + dy) / 2) * 2));
+    }, () => ({ x: TL.teks.x, y: TL.teks.y }));
+
+    const teks = $('#kopTeks');
+    if (teks) teks.style.cursor = TL.teks.rata === 'kiri' ? 'move' : 'ns-resize';
+  }
+
+  /* Satu penangan seret untuk mouse, layar sentuh, dan pena sekaligus.
+     Memakai pointer event, bukan drag-and-drop HTML5, karena yang kedua
+     tidak bekerja di layar sentuh.
+
+     Pengikutnya dipasang pada `window`, bukan pada kotak yang diseret.
+     Setiap gerakan menggambar ulang pratinjau — supaya yang terlihat
+     selalu sama dengan hasil cetaknya — dan penggambaran itu mengganti
+     kotaknya dengan yang baru. Kalau pengikutnya menempel pada kotak,
+     seretan akan putus pada gerakan pertama. */
+  function seret(el, geser, mulai, kecuali) {
+    if (!el) return;
+    el.addEventListener('pointerdown', ev => {
+      if (kecuali && ev.target.closest(kecuali)) return;
+      ev.preventDefault();
+      const x0 = ev.clientX, y0 = ev.clientY, awal = mulai();
+      const jalan = e => { geser(e.clientX - x0, e.clientY - y0, awal); segarRingan(); };
+      const henti = () => {
+        window.removeEventListener('pointermove', jalan);
+        window.removeEventListener('pointerup', henti);
+        window.removeEventListener('pointercancel', henti);
+      };
+      window.addEventListener('pointermove', jalan);
+      window.addEventListener('pointerup', henti);
+      window.addEventListener('pointercancel', henti);
+    });
+  }
+
+  // ------------------------------------------------------ tombol pengatur
+  function atur() {
+    const pilih = (label, nilai, daftar, saat) => `
+      <div class="kop-atur-baris"><span class="kop-atur-label">${esc(label)}</span>
+        <span class="kop-pilih" data-saat="${esc(saat)}">${daftar.map(([v, t]) =>
+          `<button type="button" class="kop-pilih-btn${v === nilai ? ' aktif' : ''}"
+             data-nilai="${esc(String(v))}">${esc(t)}</button>`).join('')}</span></div>`;
+
+    const geser = (label, nilai, min, maks, saat, satuan) => `
+      <div class="kop-atur-baris"><span class="kop-atur-label">${esc(label)}</span>
+        <input type="range" class="kop-geser" data-saat="${esc(saat)}"
+               min="${min}" max="${maks}" value="${nilai}">
+        <span class="kop-atur-nilai">${nilai}${esc(satuan || '')}</span></div>`;
+
+    $('#kopAtur').innerHTML = `
+      <div class="kop-atur-kel"><h4>Logo</h4>
+        ${pilih('Tampilkan', TL.logo.tampil, [[true, 'Ya'], [false, 'Tidak']], 'logo.tampil')}
+        ${TL.logo.tampil ? geser('Ukuran', TL.logo.ukuran, 20, 140, 'logo.ukuran', ' px') : ''}
+      </div>
+      <div class="kop-atur-kel"><h4>Tulisan kop</h4>
+        ${pilih('Perataan', TL.teks.rata, [['kiri', 'Kiri'], ['tengah', 'Tengah'], ['kanan', 'Kanan']], 'teks.rata')}
+        ${geser('Besar nama', TL.teks.ukuranNama, 8, 28, 'teks.ukuranNama', ' pt')}
+        ${geser('Besar alamat', TL.teks.ukuranAlamat, 6, 20, 'teks.ukuranAlamat', ' pt')}
+      </div>
+      <div class="kop-atur-kel"><h4>Judul laporan</h4>
+        ${pilih('Perataan', TL.judul.rata, [['kiri', 'Kiri'], ['tengah', 'Tengah'], ['kanan', 'Kanan']], 'judul.rata')}
+        ${geser('Besar judul', TL.judul.ukuran, 8, 24, 'judul.ukuran', ' pt')}
+      </div>
+      <div class="kop-atur-kel"><h4>Lain-lain</h4>
+        ${pilih('Garis pembatas', TL.garis, [[true, 'Ada'], [false, 'Tidak']], 'garis')}
+        ${pilih('Catatan kaki', TL.kaki.tampil, [[true, 'Tampil'], [false, 'Tidak']], 'kaki.tampil')}
+        ${TL.kaki.tampil ? pilih('Letak catatan kaki', TL.kaki.rata,
+            [['kiri', 'Kiri'], ['tengah', 'Tengah'], ['kanan', 'Kanan']], 'kaki.rata') : ''}
+      </div>`;
+
+    const tulis = (jalur, nilai) => {
+      const bagian = jalur.split('.');
+      let o = TL;
+      while (bagian.length > 1) o = o[bagian.shift()];
+      o[bagian[0]] = nilai;
+    };
+    const bacaNilai = t => t === 'true' ? true : t === 'false' ? false : t;
+
+    $('#kopAtur').querySelectorAll('.kop-pilih-btn').forEach(b => {
+      b.onclick = () => {
+        tulis(b.parentNode.dataset.saat, bacaNilai(b.dataset.nilai));
+        segar();
+      };
+    });
+    $('#kopAtur').querySelectorAll('.kop-geser').forEach(g => {
+      g.oninput = () => {
+        tulis(g.dataset.saat, Number(g.value));
+        g.nextElementSibling.textContent = g.value +
+          (g.dataset.saat.includes('ukuranNama') || g.dataset.saat.includes('ukuranAlamat')
+           || g.dataset.saat === 'judul.ukuran' ? ' pt' : ' px');
+        segarRingan();
+      };
+    });
+  }
+
+  // ------------------------------------------------------------- simpan
+  $('#bKopBawaan').onclick = () => {
+    TL = JSON.parse(JSON.stringify(K.TATA_LETAK_BAWAAN));
+    segar();
+    toast('Tata letak dikembalikan ke bawaan — belum disimpan');
+  };
+
+  $('#bKopSimpan').onclick = async () => {
+    if (!berubah()) { toast('Tidak ada yang berubah'); return; }
+    if (MODE === 'contoh') {
+      (D.profil || (D.profil = {})).tata_letak = TL;
+      toast('Mode contoh: tidak tersimpan');
+      return;
+    }
+    try {
+      await api('/rest/v1/profil_dokumen?id=eq.1', {
+        method: 'PATCH', body: JSON.stringify({ tata_letak: TL })
+      });
+      await muatSemua();
+      halProfil();
+      toast('Tata letak kop disimpan — berlaku di semua aplikasi');
+    } catch (e) {
+      toast('Gagal menyimpan: ' + e.message, true);
+    }
+  };
+
+  segar();
 }
 
 function formProfil() {
@@ -3535,88 +3763,55 @@ function stempel() {
   const t = new Date(), p = n => String(n).padStart(2, '0');
   return `${t.getFullYear()}${p(t.getMonth() + 1)}${p(t.getDate())}`;
 }
-/* Kop seragam untuk seluruh berkas Excel: logo di kiri, nama dan
-   alamat sekolah di sebelahnya, judul di tengah. Dipakai halaman mana
-   pun, sehingga identitas sekolah cukup diatur di satu tempat —
-   halaman Profil Dokumen.                                            */
+/* Penjaga: bila assets/kop-dokumen.js tidak termuat, unduhan gagal dengan
+   pesan yang bisa ditindaklanjuti, bukan "undefined". */
+function kopBersama() {
+  if (!window.KopDokumen) throw new Error(
+    'Berkas assets/kop-dokumen.js belum termuat, sehingga kop dokumen tidak bisa dibuat. '
+    + 'Muat ulang halaman; bila tetap gagal, laporkan ke operator.');
+  return window.KopDokumen;
+}
+
+/* Kop seragam untuk seluruh berkas Excel. Susunan dan letaknya tidak lagi
+   ditentukan di sini melainkan di assets/kop-dokumen.js, yang sama persis
+   di keempat aplikasi dan membaca tata letak yang diatur operator di
+   halaman Profil Dokumen. Fungsi ini tinggal menyiapkan logo dan profil. */
 async function kopExcel(wb, ws, judul, subjudul, kolomAkhir) {
-  try {
-    const gbr = await fetch(SEKOLAH.logo).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
-    const id = wb.addImage({ buffer: gbr, extension: 'png' });
-    ws.addImage(id, { tl: { col: 0.2, row: 0.15 }, ext: { width: 62, height: 62 } });
-  } catch (e) { /* tanpa logo pun berkasnya tetap terbentuk */ }
-
-  // Logo selebar kira-kira 9 satuan lebar kolom. Teks kop diletakkan
-  // pada kolom tempat logo berakhir, lalu digeser ke dalam sejauh sisa
-  // lebar logo — sehingga tulisan menempel di sebelah logo, tidak
-  // melompat satu kolom penuh dan tidak pula tertimpa.
-  const LEBAR_LOGO = 9;
-  const daftarLebar = (ws.columns || []).map(k => (k && k.width) || 10);
-  let lebarKumpul = 0, kolomTeks = 2, geser = 0;
-  for (let i = 0; i < daftarLebar.length; i++) {
-    const sebelum = lebarKumpul;
-    lebarKumpul += daftarLebar[i];
-    if (lebarKumpul >= LEBAR_LOGO) {
-      kolomTeks = i + 1;
-      geser = Math.max(0, Math.round(LEBAR_LOGO - sebelum));
-      break;
-    }
-  }
-  if (kolomTeks < 2) { kolomTeks = 2; geser = 0; }
-  kolomTeks = Math.min(kolomTeks, Math.max(2, kolomAkhir));
-
-  const akhirKol = Math.max(kolomTeks, kolomAkhir);
-  const kiri = (r, t, u, tb) => {
-    ws.mergeCells(r, kolomTeks, r, akhirKol);
-    const c = ws.getCell(r, kolomTeks);
-    c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
-    c.alignment = { horizontal: 'left', vertical: 'middle', indent: geser };
-    ws.getRow(r).height = u >= 13 ? 24 : 16;
-  };
-  const tengah = (r, t, u, tb) => {
-    ws.mergeCells(r, 1, r, Math.max(1, kolomAkhir));
-    const c = ws.getCell(r, 1);
-    c.value = t; c.font = { name: 'Calibri', size: u, bold: tb };
-    c.alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getRow(r).height = u >= 13 ? 26 : 18;
-  };
-
-  // Seluruh isian Profil Dokumen yang terisi ikut tercetak; yang kosong
-  // dilewati sehingga tidak meninggalkan baris kosong.
-  let r = 1;
-  kiri(r++, SEKOLAH.nama, 14, true);
-
-  const barisAlamat = [SEKOLAH.alamat,
-                       SEKOLAH.npsn ? 'NPSN ' + SEKOLAH.npsn : '',
-                       SEKOLAH.telepon ? 'Telp. ' + SEKOLAH.telepon : ''].filter(Boolean);
-  if (barisAlamat.length) kiri(r++, barisAlamat.join('  ·  '), 10, false);
-
-  const barisHubung = [SEKOLAH.email, SEKOLAH.laman].filter(Boolean);
-  if (barisHubung.length) kiri(r++, barisHubung.join('  ·  '), 9.5, false);
-
-  // Logo setinggi tiga baris; bila kopnya pendek, ditambah baris kosong
-  // supaya judul tidak menabrak logo.
-  while (r < 4) { ws.getRow(r).height = 8; r++; }
-
-  tengah(r++, judul.toUpperCase(), 14, true);
-  if (subjudul) tengah(r++, subjudul, 10, false);
-
-  const garis = r - 1;
-  for (let k = 1; k <= kolomAkhir; k++)
-    ws.getCell(garis, k).border = { bottom: { style: 'medium', color: { argb: 'FF12262E' } } };
-
-  return r + 1;      // baris pertama yang bebas dipakai isi
+  return kopBersama().kopExcel(ws, {
+    wb, logo: await logoKop(),
+    profil: profilKop(),
+    judul: (judul || '').toUpperCase(),
+    sub: subjudul || '',
+    kolomAkhir: Math.max(1, kolomAkhir),
+    warnaGaris: 'FF12262E'
+  });
 }
 
 /* Catatan kaki dari Profil Dokumen, bila diisi. */
 function kakiExcel(ws, baris, kolomAkhir) {
-  if (!SEKOLAH.catatan) return baris;
-  ws.mergeCells(baris, 1, baris, Math.max(1, kolomAkhir));
-  const c = ws.getCell(baris, 1);
-  c.value = SEKOLAH.catatan;
-  c.font = { size: 9, italic: true, color: { argb: 'FF48606A' } };
-  c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-  return baris + 1;
+  return kopBersama().kakiExcel(ws, baris, {
+    profil: profilKop(), kolomAkhir: Math.max(1, kolomAkhir)
+  });
+}
+
+/* Berkas logo dibaca sekali saja. Satu unduhan jadwal KBM bisa berisi
+   puluhan lembar, dan tiap lembar memerlukan logo yang sama. */
+let _logoKop;
+async function logoKop() {
+  if (_logoKop !== undefined) return _logoKop;
+  try {
+    _logoKop = { buffer: await fetch(SEKOLAH.logo).then(r => r.ok ? r.arrayBuffer() : Promise.reject()) };
+  } catch (e) { _logoKop = null; }   // tanpa logo pun berkasnya tetap terbentuk
+  return _logoKop;
+}
+
+/* Profil apa adanya bila tabelnya terbaca; bila tidak — mode contoh atau
+   tabel belum ada — disusun dari nilai cadangan supaya kop tetap terbentuk. */
+function profilKop() {
+  if (D.profil) return D.profil;
+  return { nama_sekolah: SEKOLAH.nama, alamat: SEKOLAH.alamat, kota: SEKOLAH.kota,
+           npsn: SEKOLAH.npsn, telepon: SEKOLAH.telepon, email: SEKOLAH.email,
+           laman: SEKOLAH.laman, catatan_kaki: SEKOLAH.catatan };
 }
 
 /* Blok tanda tangan seragam, juga dari Profil Dokumen. */
