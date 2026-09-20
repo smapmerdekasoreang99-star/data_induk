@@ -3163,7 +3163,7 @@ function pasangEditorKop() {
 
     const rataGaya = r => r === 'tengah' ? 'left:0;right:0;text-align:center'
                         : r === 'kanan'  ? 'left:0;right:0;text-align:right'
-                        : `left:${TL.teks.x}px;right:0;text-align:left`;
+                        : `left:${susun.teksX}px;right:0;text-align:left`;
 
     const bNama = nomor(susun.indeks.nama);
     const bIdentitas = susun.indeks.identitas.map(nomor);
@@ -3177,13 +3177,6 @@ function pasangEditorKop() {
 
     kertas.style.height = (susun.tinggi + 150) + 'px';
     kertas.innerHTML = `
-      ${TL.logo.tampil ? `<div class="kop-benda kop-logo" id="kopLogo"
-           style="left:${TL.logo.x}px;top:${TL.logo.y}px;width:${TL.logo.ukuran}px;height:${TL.logo.ukuran}px">
-           <img src="${esc(SEKOLAH.logo)}" alt="" draggable="false"
-                onerror="this.style.display='none'">
-           <span class="kop-pegangan" id="kopUbahUkuran" title="Tarik untuk mengubah ukuran"></span>
-         </div>` : ''}
-
       <div class="kop-benda kop-teks" id="kopTeks"
            style="${rataGaya(TL.teks.rata)};top:${atasTeks}px;height:${tinggiTeks}px">
         <div style="font-size:${TL.teks.ukuranNama}pt;font-weight:700;line-height:${bNama.px}px">
@@ -3208,7 +3201,20 @@ function pasangEditorKop() {
       ${TL.kaki.tampil && p.catatan_kaki ? `<div class="kop-mati kop-kaki"
         style="left:0;right:0;top:${susun.tinggi + 96}px;text-align:${
           TL.kaki.rata === 'kiri' ? 'left' : TL.kaki.rata === 'kanan' ? 'right' : 'center'}"
-        >${esc(p.catatan_kaki)}</div>` : ''}`;
+        >${esc(p.catatan_kaki)}</div>` : ''}
+
+      <!-- Logo sengaja ditulis PALING AKHIR supaya tergambar di ATAS tulisan.
+           Di Excel gambar memang selalu di atas sel dan tidak bisa ditaruh di
+           belakang tulisan; kalau pratinjau ini menggambarnya di bawah,
+           tabrakan logo dengan tulisan baru ketahuan setelah berkasnya
+           diunduh. Tabrakannya sendiri sudah dicegah — tulisan berhenti di
+           tepi logo — tetapi yang terlihat di sini harus tetap jujur. -->
+      ${TL.logo.tampil ? `<div class="kop-benda kop-logo" id="kopLogo"
+           style="left:${TL.logo.x}px;top:${TL.logo.y}px;width:${TL.logo.ukuran}px;height:${TL.logo.ukuran}px">
+           <img src="${esc(SEKOLAH.logo)}" alt="" draggable="false"
+                onerror="this.style.display='none'">
+           <span class="kop-pegangan" id="kopUbahUkuran" title="Tarik untuk mengubah ukuran"></span>
+         </div>` : ''}`;
 
     if (TL.logo.tampil) {
       seret($('#kopLogo'), (dx, dy, awal) => {
@@ -3224,12 +3230,19 @@ function pasangEditorKop() {
     // Tulisan hanya bisa digeser mendatar bila perataannya kiri; kalau
     // rata tengah atau kanan, letaknya ditentukan lebar halaman.
     seret($('#kopTeks'), (dx, dy, awal) => {
+      // Digeser tegak dulu, baru mendatar: menggeser tulisan ke bawah logo
+      // membebaskannya dari batas kiri, dan itu baru diketahui sesudah y
+      // yang baru dipakai.
+      TL.teks.y = Math.max(0, Math.min(200, Math.round((awal.y + dy) / 2) * 2));
       if (TL.teks.rata === 'kiri') {
         const L = K.LANGKAH_GESER;
-        TL.teks.x = Math.max(0, Math.min(LEBAR_KERTAS - 120,
+        // Berhenti di tepi logo. Nilai yang tersimpan sama dengan yang
+        // terlihat, supaya tidak ada letak tersembunyi yang muncul lagi
+        // sewaktu logonya digeser.
+        const batasKiri = K.susunanKop(TL, p, JUDUL_CONTOH, SUB_CONTOH).teksMinX;
+        TL.teks.x = Math.max(batasKiri, Math.min(LEBAR_KERTAS - 120,
           Math.round((awal.x + dx) / L) * L));
       }
-      TL.teks.y = Math.max(0, Math.min(200, Math.round((awal.y + dy) / 2) * 2));
     }, () => ({ x: TL.teks.x, y: TL.teks.y }));
 
     const teks = $('#kopTeks');
