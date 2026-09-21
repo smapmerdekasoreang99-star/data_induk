@@ -1777,11 +1777,15 @@ const HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const idJadwalBaru = () => 'JD' + Date.now().toString(36).toUpperCase();
 
 /* Warna blok matriks per mata pelajaran — pasangan [latar, aksen] yang
-   lembut, supaya pola jadwal terbaca sekilas tanpa menyilaukan. */
+   lembut, supaya pola jadwal terbaca sekilas tanpa menyilaukan.
+   Paletnya sama persis dengan matriks di aplikasi Kehadiran Guru: nadanya
+   dicondongkan ke gading-emas mengikuti tema dasar, supaya satu jadwal yang
+   sama tidak berganti warna hanya karena dibuka dari aplikasi yang lain. */
 const WARNA_BLOK = [
-  ['#E3EEF7', '#2B6CB0'], ['#DCEFE8', '#0F6E5C'], ['#EEE4F3', '#7B4397'], ['#FBEBD5', '#B26A00'],
-  ['#F7E1DE', '#A32F2A'], ['#DDEFF1', '#1F7A85'], ['#F1EDD5', '#7A6A12'], ['#F3E0EA', '#9A3F6C'],
-  ['#E4E9D6', '#55702A'], ['#E6E3F3', '#4B4E9E'], ['#EFE4D9', '#8A5A35'], ['#E3E8EA', '#48606A']
+  ['#F3E6C4', '#A87D1E'], ['#DCEBE3', '#3F7A5C'], ['#DDE7F1', '#3D6A93'],
+  ['#F3DED7', '#A8432E'], ['#E9E0F0', '#71508F'], ['#DDEEEE', '#2F7C7C'],
+  ['#F6E3CF', '#B0662A'], ['#F1DDE6', '#9A4468'], ['#E6E9D3', '#6C7430'],
+  ['#D9E6EC', '#2E6477'], ['#EFE3D6', '#8A5A35'], ['#E4E1DA', '#6E6455']
 ];
 const warnaMapel = nama => {
   const i = D.mapel.findIndex(m => m.nama === nama);
