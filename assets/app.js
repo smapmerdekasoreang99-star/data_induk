@@ -1347,7 +1347,7 @@ function halPiketMatriks() {
     <div class="pu-tray buang" id="pkBuang">Seret pita ke sini untuk mengeluarkan petugas dari jadwal</div>`}`;
 
   pasangTabPiket();
-  if ($('#bUnduhPiket')) $('#bUnduhPiket').onclick = () => unduhPiketXlsx(pakai, jamKe, sel, jamTeks);
+  if ($('#bUnduhPiket')) $('#bUnduhPiket').onclick = () => unduhPiketMejaXlsx(pakai, jamKe, sel, jamTeks);
   pasangSeretMeja();
 }
 
@@ -1479,42 +1479,236 @@ function dialogPiketSel(hari, jamKe) {
 
 /* Berkas Excel berkop, memakai ExcelJS supaya logo dan penggabungan sel
    bisa dipakai — SheetJS tidak mendukung penyisipan gambar.            */
+/* Dua alamat, dicoba berurutan. Satu CDN saja pernah membuat seluruh
+   unduhan xlsx mati di jaringan yang memblokirnya, dan pesannya
+   ("periksa sambungan internet") menyesatkan karena internetnya sendiri
+   hidup. Kehadiran Guru memuat pustaka yang sama dari jsdelivr, jadi
+   itulah cadangannya. */
+const CDN_EXCELJS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+  'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+];
+
 async function muatExcelJS() {
   if (window.ExcelJS) return window.ExcelJS;
-  await new Promise((selesai, gagal) => {
-    const sc = document.createElement('script');
-    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-    sc.onload = selesai;
-    sc.onerror = () => gagal(new Error('Pembuat Excel gagal dimuat. Periksa sambungan internet.'));
-    document.head.appendChild(sc);
-  });
-  return window.ExcelJS;
+  for (const alamat of CDN_EXCELJS) {
+    try {
+      await new Promise((selesai, gagal) => {
+        const sc = document.createElement('script');
+        sc.src = alamat;
+        sc.onload = selesai;
+        sc.onerror = () => gagal(new Error('gagal memuat ' + alamat));
+        document.head.appendChild(sc);
+      });
+      if (window.ExcelJS) return window.ExcelJS;
+    } catch (e) { console.warn(e.message); }
+  }
+  throw new Error('Pembuat Excel (ExcelJS) tidak bisa diunduh dari internet. '
+    + 'Biasanya jaringan sekolah memblokir cdnjs.cloudflare.com dan cdn.jsdelivr.net — '
+    + 'coba lewat jaringan lain, atau minta keduanya dibuka.');
 }
 
-async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
+/* --------------------------------------------- unduhan halaman Piket
+   Ketiga tab bisa diunduh, dan tiap berkas berisi dua macam lembar:
+
+     Jadwal          matriks isi jadwalnya — untuk ditempel dan diarsipkan
+     Formulir paraf  lembar sepekan yang kosong, untuk dibubuhi tangan
+
+   Keduanya sengaja dipisah. Matriks menyatakan SIAPA TERJADWAL, dan
+   barisnya adalah hari — "Senin", bukan "Senin, 21 September 2026".
+   Paraf di atasnya tidak membuktikan apa pun, karena lembar yang sama
+   berlaku sepanjang tahun. Yang dibubuhi paraf karena itu lembar
+   tersendiri, yang pekannya ditulis tangan. Versi bertanggal ada di
+   Kehadiran Guru → Pelaksanaan Piket, halaman yang memang tahu
+   tanggalnya.
+
+   Bentuk formulirnya sendiri ada di assets/formulir-piket.js, berkas
+   yang sama persis di kedua aplikasi: dokumen yang ditandatangani guru
+   tidak boleh berbeda tergantung dari mana diunduhnya.               */
+
+function formulirBersama() {
+  if (!window.FormulirPiket) throw new Error(
+    'Berkas assets/formulir-piket.js belum termuat, sehingga formulir paraf tidak bisa dibuat. '
+    + 'Muat ulang halaman; bila tetap gagal, laporkan ke operator.');
+  return window.FormulirPiket;
+}
+
+/* Penanda tangan formulir: Kepala Sekolah mengetahui, Wakasek Kurikulum
+   sebagai penanggung jawab isinya — susunan yang sama dengan berkas
+   rekap di Kehadiran Guru. Tanggalnya kosong karena lembarnya memang
+   diisi tangan pada pekan yang bersangkutan. */
+const ttdFormulir = () => ({
+  tempat: SEKOLAH.kota, tanggal: null, kepala: SEKOLAH.kepala,
+  labelKanan: 'Wakasek Kurikulum,', namaKanan: (D.ttd || {}).kurikulum || ''
+});
+
+/* Matriks piket di kertas: baris jam pelajaran, kolom hari. Sengaja
+   berlawanan dengan layar — di kertas kolom hari yang cuma lima membuat
+   nama guru terbaca utuh, sedangkan dua belas kolom jam memaksa
+   tulisannya mengecil sampai tidak terbaca lagi.
+
+   isiSel(hari, jam) mengembalikan daftar tulisan untuk satu sel; itulah
+   satu-satunya yang berbeda antara matriks meja dan matriks unit.     */
+async function lembarMatriksPiket(wb, { nama, judul, hari, jamKe, isiSel, jamTeks }) {
+  const ws = wb.addWorksheet(formulirBersama().namaLembar(nama));
+  const kolomTerakhir = hari.length + 1;
+
+  // Lebar kolom hari mengikuti tulisan terpanjang yang benar-benar ada
+  // pada jadwal ini, bukan angka tetap — supaya nama guru yang panjang
+  // tidak pecah menjadi tiga baris.
+  const semua = [];
+  hari.forEach(h => jamKe.forEach(j => semua.push(...isiSel(h, j))));
+  const terpanjang = Math.max(18, ...semua.map(t => String(t).length));
+  ws.columns = [{ width: 13 }, ...hari.map(() => ({ width: Math.min(34, terpanjang + 2) }))];
+
+  let r = await kopExcel(wb, ws, judul, `Tahun Pelajaran ${sesi.ta}`, kolomTerakhir);
+
+  const barisKepala = r;
+  const kepala = ws.getRow(r);
+  ['Jam', ...hari].forEach((t, i) => {
+    const c = kepala.getCell(i + 1);
+    c.value = t;
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+    c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
+                 left: { style: 'thin' }, right: { style: 'thin' } };
+  });
+  kepala.height = 22;
+  r++;
+
+  jamKe.forEach((j, urutan) => {
+    const baris = ws.getRow(r);
+    const kiri = baris.getCell(1);
+    kiri.value = jamTeks(j) ? `Jam ${j}\n${jamTeks(j)}` : `Jam ${j}`;
+    kiri.font = { bold: true, size: 10 };
+    kiri.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    hari.forEach((h, i) => {
+      const c = baris.getCell(i + 2);
+      const isi = isiSel(h, j);
+      c.value = isi.join('\n');
+      c.alignment = { vertical: 'middle', wrapText: true };
+      c.font = { size: 10 };
+      // Jam tanpa petugas diarsir; selebihnya berseling tipis supaya mata
+      // tidak melompat baris saat membaca ke kanan.
+      if (!isi.length) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+      else if (urutan % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBF9F4' } };
+    });
+
+    baris.eachCell(c => {
+      c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
+                   left: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    const terbanyak = Math.max(1, ...hari.map(h => isiSel(h, j).length));
+    baris.height = Math.max(22, terbanyak * 14);
+    r++;
+  });
+
+  r = kakiExcel(ws, r + 1, kolomTerakhir);
+  ttdExcel(ws, r + 2, kolomTerakhir);
+  ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                   margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
+                   horizontalCentered: true, printTitlesRow: `${barisKepala}:${barisKepala}` };
+  ws.views = [{ showGridLines: false }];
+  return ws;
+}
+
+/* Baris formulir paraf: satu petugas, jam jaganya dikelompokkan per hari.
+   Jamnya diserahkan sebagai DAFTAR ANGKA, bukan ringkasan "1–3": tiap jam
+   mendapat lariknya sendiri di kertas karena tiap jam diparaf sendiri.
+   Urut masa kerja, seperti seluruh daftar guru di aplikasi ini. */
+function barisParaf(rows, ambilKunci, ambilNama, ambilUnit) {
+  const peringkat = peringkatGuru();
+  const per = new Map();
+  rows.forEach(p => {
+    const k = String(ambilKunci(p));
+    if (!per.has(k)) per.set(k, { guruId: p.guru_id, nama: ambilNama(p),
+                                  unit: ambilUnit ? ambilUnit(p) : '', jam: {} });
+    const e = per.get(k);
+    (e.jam[p.hari] = e.jam[p.hari] || []).push(Number(p.jam_ke));
+  });
+  const daftar = [...per.values()];
+  daftar.forEach(e => Object.keys(e.jam).forEach(h => {
+    e.jam[h] = [...new Set(e.jam[h])].sort((a, b) => a - b);
+  }));
+  return daftar.sort((a, b) => String(a.unit || '').localeCompare(String(b.unit || ''), 'id')
+                            || peringkat(a.guruId) - peringkat(b.guruId));
+}
+
+async function simpanBukuPiket(wb, namaBerkas, kabar) {
+  const buf = await wb.xlsx.writeBuffer();
+  unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+            `${namaBerkas}_${stempel()}.xlsx`);
+  toast(kabar);
+}
+
+async function unduhPiketMejaXlsx(hari, jamKe, sel, jamTeks) {
   await jalankan('Menyiapkan berkas…', async () => {
     const ExcelJS = await muatExcelJS();
+    const F = formulirBersama();
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Jadwal Piket', {
-      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+    await lembarMatriksPiket(wb, {
+      nama: 'Jadwal', judul: 'Jadwal Piket Meja Sekolah', hari, jamKe, jamTeks,
+      isiSel: (h, j) => sel(h, j).map(p => p.guru + (p.staf ? ' (staf)' : ''))
     });
-    const kolomTerakhir = hari.length + 1;
+    F.lembarParaf(wb, {
+      wb, kop: kopBersama(), logo: await logoKop(), profil: profilKop(), jenis: 'meja',
+      judul: 'Formulir Paraf Piket Meja Sekolah', sub: `Tahun Pelajaran ${sesi.ta}`,
+      namaLembar: 'Formulir Paraf', pekan: null, ttd: ttdFormulir(),
+      baris: barisParaf(D.piketJadwal || [], p => p.guru_id, p => p.guru)
+    });
+    await simpanBukuPiket(wb, 'Piket_Meja_Sekolah', 'Jadwal dan formulir paraf piket meja sekolah diunduh');
+  });
+}
 
-    // Lebar kolom hari mengikuti nama terpanjang yang benar-benar ada
-    // pada jadwal ini, bukan angka tetap — supaya nama guru yang panjang
-    // tidak pecah menjadi tiga baris.
-    const semuaNama = [];
-    hari.forEach(h => jamKe.forEach(j =>
-      sel(h, j).forEach(p => semuaNama.push(p.guru + (p.staf ? ' (staf)' : '')))));
-    const terpanjang = Math.max(18, ...semuaNama.map(n => n.length));
-    const lebarHari = Math.min(34, terpanjang + 2);
-    ws.columns = [{ width: 13 }, ...hari.map(() => ({ width: lebarHari }))];
+async function unduhPiketUnitXlsx() {
+  await jalankan('Menyiapkan berkas…', async () => {
+    const ExcelJS = await muatExcelJS();
+    const F = formulirBersama();
+    const data = D.piketUnit || [];
+    const hari = HARI_UNIT.filter(h => data.some(p => p.hari === h));
+    const jamKe = [...new Set(data.map(p => Number(p.jam_ke)))].sort((a, b) => a - b);
+    if (!hari.length) throw new Error('Belum ada jam piket unit yang terjadwal, jadi belum ada yang bisa '
+      + 'diunduh. Susun dulu jadwalnya dengan menyeret kotak ke matriks.');
+    const jamTeks = j => {
+      const x = D.jamPel.find(v => Number(v.jam_ke) === j);
+      return x && x.mulai ? jam5(x.mulai) + '–' + jam5(x.selesai) : '';
+    };
+    const wb = new ExcelJS.Workbook();
+    await lembarMatriksPiket(wb, {
+      nama: 'Jadwal', judul: 'Jadwal Piket Unit', hari, jamKe, jamTeks,
+      isiSel: (h, j) => data.filter(p => p.hari === h && Number(p.jam_ke) === j)
+                            .map(p => `${p.guru}\n${p.unit || 'unit belum diisi'}`)
+    });
+    F.lembarParaf(wb, {
+      wb, kop: kopBersama(), logo: await logoKop(), profil: profilKop(), jenis: 'unit',
+      judul: 'Formulir Paraf Piket Unit', sub: `Tahun Pelajaran ${sesi.ta}`,
+      namaLembar: 'Formulir Paraf', pekan: null, ttd: ttdFormulir(),
+      baris: barisParaf(data, p => p.tugas_id, p => p.guru, p => p.unit)
+    });
+    await simpanBukuPiket(wb, 'Piket_Unit', 'Jadwal dan formulir paraf piket unit diunduh');
+  });
+}
 
-    let r = await kopExcel(wb, ws, 'Jadwal Piket Meja Sekolah',
-      `Tahun Pelajaran ${sesi.ta}`, kolomTerakhir);
-    const judul = ws.getRow(r);
-    ['Jam', ...hari].forEach((t, i) => {
-      const c = judul.getCell(i + 1);
+async function unduhPiketParkiranXlsx() {
+  await jalankan('Menyiapkan berkas…', async () => {
+    const ExcelJS = await muatExcelJS();
+    const F = formulirBersama();
+    const HR = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+    const roster = D.parkiran || [];
+    const wb = new ExcelJS.Workbook();
+
+    /* Jadwalnya tidak berbentuk matriks jam: parkiran dihitung per HARI,
+       satu petugas, sesudah jam pulang. Daftar lima baris sudah memuat
+       seluruhnya, sedangkan matriks jam akan kosong melompong.        */
+    const ws = wb.addWorksheet('Jadwal');
+    const KOL = 4;
+    ws.columns = [{ width: 12 }, { width: 34 }, { width: 22 }, { width: 30 }];
+    let r = await kopExcel(wb, ws, 'Jadwal Piket Parkiran', `Tahun Pelajaran ${sesi.ta}`, KOL);
+    const kepala = ws.getRow(r);
+    ['Hari', 'Petugas', 'Jenis PTK', 'Catatan'].forEach((t, i) => {
+      const c = kepala.getCell(i + 1);
       c.value = t;
       c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
@@ -1522,41 +1716,45 @@ async function unduhPiketXlsx(hari, jamKe, sel, jamTeks) {
       c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
                    left: { style: 'thin' }, right: { style: 'thin' } };
     });
-    judul.height = 22;
+    kepala.height = 22;
     r++;
-
-    jamKe.forEach(j => {
+    HR.forEach((h, i) => {
+      const p = roster.find(x => x.hari === h);
       const baris = ws.getRow(r);
-      const kiri = baris.getCell(1);
-      kiri.value = jamTeks(j) ? `Jam ${j}\n${jamTeks(j)}` : `Jam ${j}`;
-      kiri.font = { bold: true, size: 10 };
-      kiri.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-
-      hari.forEach((h, i) => {
-        const c = baris.getCell(i + 2);
-        const isi = sel(h, j);
-        c.value = isi.map(p => p.guru + (p.staf ? ' (staf)' : '')).join('\n');
-        c.alignment = { vertical: 'middle', wrapText: true };
-        c.font = { size: 10 };
-        if (!isi.length) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
-      });
-
-      baris.eachCell(c => {
+      [h, p ? p.nama : 'belum ada petugas', p ? (p.jenis_ptk || '—') : '—',
+       (p && p.catatan) || ''].forEach((v, k) => {
+        const c = baris.getCell(k + 1);
+        c.value = v;
+        c.font = { size: 10, italic: !p && k === 1 };
+        c.alignment = { horizontal: k === 0 ? 'center' : 'left', vertical: 'middle', wrapText: true };
         c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
                      left: { style: 'thin' }, right: { style: 'thin' } };
+        if (!p) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+        else if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBF9F4' } };
       });
-      const terbanyak = Math.max(1, ...hari.map(h => sel(h, j).length));
-      baris.height = Math.max(22, terbanyak * 14);
+      baris.height = 22;
       r++;
     });
+    r += 1;
+    ws.mergeCells(r, 1, r, KOL);
+    const catatan = ws.getCell(r, 1);
+    catatan.value = 'Pengawas parkiran sesudah jam pulang, sekitar 30 menit. Kompensasinya dihitung '
+      + 'per hari petugas benar-benar hadir, bukan per hari terjadwal.';
+    catatan.font = { size: 8, italic: true, color: { argb: 'FF5E5548' } };
+    r = kakiExcel(ws, r + 2, KOL);
+    ttdExcel(ws, r + 2, KOL);
+    ws.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
+                     horizontalCentered: true };
+    ws.views = [{ showGridLines: false }];
 
-    r = kakiExcel(ws, r + 1, kolomTerakhir);
-    ttdExcel(ws, r + 2, kolomTerakhir);
-
-    const buf = await wb.xlsx.writeBuffer();
-    unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-              `Jadwal_Piket_${stempel()}.xlsx`);
-    toast('Jadwal piket diunduh');
+    F.lembarParaf(wb, {
+      wb, kop: kopBersama(), logo: await logoKop(), profil: profilKop(), jenis: 'parkiran',
+      judul: 'Formulir Paraf Piket Parkiran', sub: `Tahun Pelajaran ${sesi.ta}`,
+      namaLembar: 'Formulir Paraf', pekan: null, ttd: ttdFormulir(),
+      baris: Object.fromEntries(roster.map(p => [p.hari, p.nama]))
+    });
+    await simpanBukuPiket(wb, 'Piket_Parkiran', 'Jadwal dan formulir paraf piket parkiran diunduh');
   });
 }
 
@@ -2498,7 +2696,9 @@ function halPiketUnit() {
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Piket Unit + Diperbantukan</h1>
       <p>Kapan tiap penanggung jawab menjaga unitnya. Seret kotak untuk memindahkan,
-         atau ketuk sel untuk mengaturnya lewat daftar.</p></div></div>
+         atau ketuk sel untuk mengaturnya lewat daftar.</p></div>
+      <div class="sp"></div>
+      <button class="btn" id="bUnduhUnit">Unduh (xlsx)</button></div>
 
     ${barPiket('unit', '<div class="sp" style="flex:1"></div>' + unit.map(t => {
       const w = warnaUnit(t.id);
@@ -2536,6 +2736,7 @@ function halPiketUnit() {
       berjaga di meja sekolah, atau menjaga unit lain.</p>`}`;
 
   pasangTabPiket();
+  if ($('#bUnduhUnit')) $('#bUnduhUnit').onclick = unduhPiketUnitXlsx;
   if (unit.length) pasangSeretUnit();
 }
 
@@ -2691,7 +2892,9 @@ function halPiketParkiran() {
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Piket Parkiran</h1>
       <p>Pengawas parkiran sesudah jam pulang — satu petugas per hari kerja.
-         Kehadirannya dicatat di aplikasi Kehadiran Guru, halaman Pelaksanaan Piket.</p></div></div>
+         Kehadirannya dicatat di aplikasi Kehadiran Guru, halaman Pelaksanaan Piket.</p></div>
+      <div class="sp"></div>
+      <button class="btn" id="bUnduhParkiran">Unduh (xlsx)</button></div>
 
     ${barPiket('parkiran')}
 
@@ -2728,6 +2931,7 @@ function halPiketParkiran() {
       jadwal di sini tidak perlu diubah.</p>`;
 
   pasangTabPiket();
+  if ($('#bUnduhParkiran')) $('#bUnduhParkiran').onclick = unduhPiketParkiranXlsx;
   $$('.bAtur').forEach(b => b.onclick = () => formParkiran(b.closest('tr').dataset.hari));
   $$('.bKosong').forEach(b => b.onclick = () => {
     const hari = b.closest('tr').dataset.hari;

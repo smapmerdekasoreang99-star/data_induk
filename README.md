@@ -79,11 +79,44 @@ Unggah seluruh isi folder ini ke repo GitHub, aktifkan GitHub Pages.
 | Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul |
 | Jadwal KBM | matriks hari × jam, per kelas atau per guru |
 | Kelompok Belajar | Tahsin dan Matematika Dasar beserta anggotanya |
-| Piket & Honor | tiga tab: Piket Meja Sekolah (matriks, petugas, komponen honor wali kelas), Piket Unit + Diperbantukan, Piket parkiran |
+| Piket & Honor | tiga tab: Piket Meja Sekolah (matriks, petugas, komponen honor wali kelas), Piket Unit + Diperbantukan, Piket parkiran. Ketiganya bisa diunduh sebagai xlsx berisi dua lembar: **Jadwal** dan **Formulir Paraf** (lihat di bawah) |
 | Kelas & Rombel | 18 rombel tahun berjalan |
 | Mata Pelajaran | dibaca dari `kg_mapel`, dipakai bersama jadwal KBM |
 | Jabatan & Unit | pilihan untuk tugas Staf dan Diperbantukan |
 | Tahun Ajaran | pergantian tahun dan pemandu kenaikan kelas |
+
+### Unduhan halaman Piket: jadwal dan formulir paraf
+
+Tiap tab Piket & Honor punya tombol **Unduh (xlsx)**, dan berkasnya berisi dua
+lembar dengan tugas yang berbeda:
+
+| Lembar | Isinya | Untuk apa |
+|---|---|---|
+| **Jadwal** | matriks jadwalnya — baris jam pelajaran, kolom hari | ditempel di ruang guru, diarsipkan |
+| **Formulir Paraf** | daftar petugas dengan kolom Senin–Jumat yang kosong | dicetak, dibubuhi paraf, jadi bukti bagi bendahara |
+
+Paraf membuktikan kejadian pada sebuah **tanggal**, sedangkan baris matriks di
+sini adalah **hari** — "Senin", bukan "Senin, 21 September 2026". Karena itu
+parafnya tidak ditaruh di lembar jadwal: lembar yang sama berlaku sepanjang
+tahun, jadi tanda tangan di atasnya tidak menyatakan apa pun. Lembar formulirnya
+punya isian **"Pekan: ___ s.d. ___"** yang ditulis tangan.
+
+Versi bertanggal ada di **Kehadiran Guru → Pelaksanaan Piket**, halaman yang
+memang tahu tanggalnya: di sana rentang berapa pun dipecah menjadi satu lembar
+per pekan, lengkap dengan tanggal tiap kolomnya. Bentuk kertas keduanya sama
+persis karena ditulis oleh berkas yang sama,
+[`assets/formulir-piket.js`](assets/formulir-piket.js) — salinan serupa di kedua
+aplikasi, seperti `kop-dokumen.js`:
+
+```
+md5sum ../data_induk/assets/formulir-piket.js ../kehadiran_guru/assets/formulir-piket.js
+```
+
+Kolom hari pada formulir hanya terbuka untuk hari yang orang itu memang
+bertugas; sisanya diarsir supaya tidak salah bubuh. Tiap jam jaga mendapat
+lariknya sendiri di dalam kotak, dengan nomor jamnya tertulis kecil di tepi
+kiri — **satu paraf untuk satu jam**, sama dengan cara kehadirannya dicatat di
+Kehadiran Guru.
 
 ### Aturan yang dijaga database, bukan diingat petugas
 
