@@ -113,10 +113,11 @@ md5sum ../data_induk/assets/formulir-piket.js ../kehadiran_guru/assets/formulir-
 ```
 
 Kolom hari pada formulir hanya terbuka untuk hari yang orang itu memang
-bertugas; sisanya diarsir supaya tidak salah bubuh. Tiap jam jaga mendapat
-lariknya sendiri di dalam kotak, dengan nomor jamnya tertulis kecil di tepi
-kiri — **satu paraf untuk satu jam**, sama dengan cara kehadirannya dicatat di
-Kehadiran Guru.
+bertugas; sisanya diarsir supaya tidak salah bubuh. **Tiap jam jaga mendapat
+selnya sendiri yang bergaris**, dengan nomor jamnya tertulis kecil di tepi kiri —
+satu kotak satu jam, sama dengan cara kehadirannya dicatat di Kehadiran Guru.
+Yang hadir jam kedua saja memaraf kotak jam kedua, dan kotak jam pertama tinggal
+kosong. Nama petugasnya digabung menurun melintasi kotak-kotak jamnya.
 
 ### Aturan yang dijaga database, bukan diingat petugas
 
