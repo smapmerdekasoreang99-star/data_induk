@@ -95,16 +95,15 @@ lembar dengan tugas yang berbeda:
 | **Jadwal** | matriks jadwalnya — baris jam pelajaran, kolom hari | ditempel di ruang guru, diarsipkan |
 | **Formulir Paraf** | daftar petugas dengan kolom Senin–Jumat yang kosong | dicetak, dibubuhi paraf, jadi bukti bagi bendahara |
 
-Paraf membuktikan kejadian pada sebuah **tanggal**, sedangkan baris matriks di
-sini adalah **hari** — "Senin", bukan "Senin, 21 September 2026". Karena itu
-parafnya tidak ditaruh di lembar jadwal: lembar yang sama berlaku sepanjang
-tahun, jadi tanda tangan di atasnya tidak menyatakan apa pun. Lembar formulirnya
-punya isian **"Pekan: ___ s.d. ___"** yang ditulis tangan.
+Paraf membuktikan kejadian pada sebuah **tanggal**, sedangkan baris matriks
+jadwal adalah **hari** — "Senin", bukan "Senin, 21 September 2026". Karena itu
+parafnya tidak ditaruh di lembar jadwal, melainkan di lembar tersendiri.
 
-Versi bertanggal ada di **Kehadiran Guru → Pelaksanaan Piket**, halaman yang
-memang tahu tanggalnya: di sana rentang berapa pun dipecah menjadi satu lembar
-per pekan, lengkap dengan tanggal tiap kolomnya. Bentuk kertas keduanya sama
-persis karena ditulis oleh berkas yang sama,
+Lembar formulirnya **tidak bertanggal**: isian *"Pekan: ___ s.d. ___"* dan kolom
+tanggal tiap hari dibiarkan kosong untuk ditulis tangan, supaya sekali cetak bisa
+diperbanyak dengan fotokopi untuk pekan-pekan berikutnya. Lembar yang sama juga
+bisa diunduh dari **Kehadiran Guru → Pelaksanaan Piket**; bentuk kertas keduanya
+sama persis karena ditulis oleh berkas yang sama,
 [`assets/formulir-piket.js`](assets/formulir-piket.js) — salinan serupa di kedua
 aplikasi, seperti `kop-dokumen.js`:
 
@@ -112,12 +111,17 @@ aplikasi, seperti `kop-dokumen.js`:
 md5sum ../data_induk/assets/formulir-piket.js ../kehadiran_guru/assets/formulir-piket.js
 ```
 
-Kolom hari pada formulir hanya terbuka untuk hari yang orang itu memang
-bertugas; sisanya diarsir supaya tidak salah bubuh. **Tiap jam jaga mendapat
-selnya sendiri yang bergaris**, dengan nomor jamnya tertulis kecil di tepi kiri —
-satu kotak satu jam, sama dengan cara kehadirannya dicatat di Kehadiran Guru.
-Yang hadir jam kedua saja memaraf kotak jam kedua, dan kotak jam pertama tinggal
-kosong. Nama petugasnya digabung menurun melintasi kotak-kotak jamnya.
+Lembar formulirnya disusun **menurut waktu: baris jam pelajaran, kolom hari** —
+tiap hari dua kolom, nama tercetak dan kolom kosong di sebelah kanannya untuk
+paraf, dengan garis tebal memisahkan jam dan garis tipis memisahkan petugas di
+jam yang sama. Susunan itu dipilih karena pada satu jam paling banyak dua orang
+berjaga bersamaan, sehingga sepekan penuh cukup 23 larik dan **muat satu
+lembar**; disusun menurut orang, piket meja sekolah perlu 55 larik dan tumpah ke
+tiga sampai empat halaman. Sel berlatar tipis tidak perlu diisi — pada jam itu
+memang tidak ada yang berjaga.
+
+Penanda tangan di kanan mengikuti ranah isinya: **Kurikulum** untuk meja sekolah
+dan unit, **Kesiswaan** untuk parkiran.
 
 ### Aturan yang dijaga database, bukan diingat petugas
 

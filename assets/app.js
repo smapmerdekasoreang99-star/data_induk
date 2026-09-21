@@ -784,21 +784,21 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
         ws.mergeCells(b1, x[1], b2, x[1]);
         const c = ws.getCell(b1, x[1]);
         c.value = x[0];
-        c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+        c.font = { bold: true, size: 10, color: { argb: TEKS_KEPALA_XLSX } };
+        c.fill = ISI_KEPALA_XLSX;
         c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       });
       ws.mergeCells(b1, 5, b1, kolomAkhir);
       const cp = ws.getCell(b1, 5);
       cp.value = 'Pertemuan Ke / Tanggal';
-      cp.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
-      cp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+      cp.font = { bold: true, size: 10, color: { argb: TEKS_KEPALA_XLSX } };
+      cp.fill = ISI_KEPALA_XLSX;
       cp.alignment = { horizontal: 'center', vertical: 'middle' };
       for (let n = 1; n <= PERTEMUAN; n++) {
         const c = ws.getCell(b2, 4 + n);
         c.value = n;
-        c.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } };
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+        c.font = { bold: true, size: 9, color: { argb: TEKS_KEPALA_XLSX } };
+        c.fill = ISI_KEPALA_XLSX;
         c.alignment = { horizontal: 'center', vertical: 'middle' };
       }
       ws.getRow(b1).height = 20; ws.getRow(b2).height = 16;
@@ -1484,6 +1484,14 @@ function dialogPiketSel(hari, jamKe) {
    ("periksa sambungan internet") menyesatkan karena internetnya sendiri
    hidup. Kehadiran Guru memuat pustaka yang sama dari jsdelivr, jadi
    itulah cadangannya. */
+/* Kepala tabel pada berkas Excel: latar TIPIS, bukan gelap. Blok gelap
+   selebar halaman menghabiskan tinta printer sekolah tanpa menambah
+   keterbacaan apa pun — tulisan tebal dan garis sudah cukup membedakan
+   kepala tabel dari isinya. Nilainya sama dengan assets/formulir-piket.js,
+   supaya seluruh berkas yang keluar dari sistem ini tampak satu keluarga. */
+const ISI_KEPALA_XLSX = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDE8DD' } };
+const TEKS_KEPALA_XLSX = 'FF221E17';
+
 const CDN_EXCELJS = [
   'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
   'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
@@ -1533,14 +1541,20 @@ function formulirBersama() {
   return window.FormulirPiket;
 }
 
-/* Penanda tangan formulir: Kepala Sekolah mengetahui, Wakasek Kurikulum
-   sebagai penanggung jawab isinya — susunan yang sama dengan berkas
-   rekap di Kehadiran Guru. Tanggalnya kosong karena lembarnya memang
-   diisi tangan pada pekan yang bersangkutan. */
-const ttdFormulir = () => ({
-  tempat: SEKOLAH.kota, tanggal: null, kepala: SEKOLAH.kepala,
-  labelKanan: 'Wakasek Kurikulum,', namaKanan: (D.ttd || {}).kurikulum || ''
-});
+/* Penanda tangan formulir: Kepala Sekolah mengetahui, dan di kanan
+   pejabat yang berwenang atas ISI dokumennya. Piket meja sekolah dan unit
+   ranah kurikulum — keduanya jam pelajaran. Piket parkiran ranah
+   kesiswaan: yang diawasi siswa yang pulang, bukan jam belajar.
+   Tanggalnya kosong karena lembarnya memang diisi tangan pada pekan yang
+   bersangkutan. */
+const ttdFormulir = (jenis) => {
+  const kesiswaan = jenis === 'parkiran';
+  return {
+    tempat: SEKOLAH.kota, tanggal: null, kepala: SEKOLAH.kepala,
+    labelKanan: kesiswaan ? 'Wakasek Kesiswaan,' : 'Wakasek Kurikulum,',
+    namaKanan: (kesiswaan ? (D.ttd || {}).kesiswaan : (D.ttd || {}).kurikulum) || ''
+  };
+};
 
 /* Matriks piket di kertas: baris jam pelajaran, kolom hari. Sengaja
    berlawanan dengan layar — di kertas kolom hari yang cuma lima membuat
@@ -1568,8 +1582,8 @@ async function lembarMatriksPiket(wb, { nama, judul, hari, jamKe, isiSel, jamTek
   ['Jam', ...hari].forEach((t, i) => {
     const c = kepala.getCell(i + 1);
     c.value = t;
-    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+    c.font = { bold: true, color: { argb: TEKS_KEPALA_XLSX } };
+    c.fill = ISI_KEPALA_XLSX;
     c.alignment = { horizontal: 'center', vertical: 'middle' };
     c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
                  left: { style: 'thin' }, right: { style: 'thin' } };
@@ -1655,7 +1669,7 @@ async function unduhPiketMejaXlsx(hari, jamKe, sel, jamTeks) {
     F.lembarParaf(wb, {
       wb, kop: kopBersama(), logo: await logoKop(), profil: profilKop(), jenis: 'meja',
       judul: 'Formulir Paraf Piket Meja Sekolah', sub: `Tahun Pelajaran ${sesi.ta}`,
-      namaLembar: 'Formulir Paraf', pekan: null, ttd: ttdFormulir(),
+      namaLembar: 'Formulir Paraf', ttd: ttdFormulir('meja'),
       baris: barisParaf(D.piketJadwal || [], p => p.guru_id, p => p.guru)
     });
     await simpanBukuPiket(wb, 'Piket_Meja_Sekolah', 'Jadwal dan formulir paraf piket meja sekolah diunduh');
@@ -1684,7 +1698,7 @@ async function unduhPiketUnitXlsx() {
     F.lembarParaf(wb, {
       wb, kop: kopBersama(), logo: await logoKop(), profil: profilKop(), jenis: 'unit',
       judul: 'Formulir Paraf Piket Unit', sub: `Tahun Pelajaran ${sesi.ta}`,
-      namaLembar: 'Formulir Paraf', pekan: null, ttd: ttdFormulir(),
+      namaLembar: 'Formulir Paraf', ttd: ttdFormulir('unit'),
       baris: barisParaf(data, p => p.tugas_id, p => p.guru, p => p.unit)
     });
     await simpanBukuPiket(wb, 'Piket_Unit', 'Jadwal dan formulir paraf piket unit diunduh');
@@ -1710,8 +1724,8 @@ async function unduhPiketParkiranXlsx() {
     ['Hari', 'Petugas', 'Jenis PTK', 'Catatan'].forEach((t, i) => {
       const c = kepala.getCell(i + 1);
       c.value = t;
-      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+      c.font = { bold: true, color: { argb: TEKS_KEPALA_XLSX } };
+      c.fill = ISI_KEPALA_XLSX;
       c.alignment = { horizontal: 'center', vertical: 'middle' };
       c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
                    left: { style: 'thin' }, right: { style: 'thin' } };
@@ -1751,7 +1765,7 @@ async function unduhPiketParkiranXlsx() {
     F.lembarParaf(wb, {
       wb, kop: kopBersama(), logo: await logoKop(), profil: profilKop(), jenis: 'parkiran',
       judul: 'Formulir Paraf Piket Parkiran', sub: `Tahun Pelajaran ${sesi.ta}`,
-      namaLembar: 'Formulir Paraf', pekan: null, ttd: ttdFormulir(),
+      namaLembar: 'Formulir Paraf', ttd: ttdFormulir('parkiran'),
       baris: Object.fromEntries(roster.map(p => [p.hari, p.nama]))
     });
     await simpanBukuPiket(wb, 'Piket_Parkiran', 'Jadwal dan formulir paraf piket parkiran diunduh');
@@ -2159,8 +2173,8 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
       ['Jam', ...hariAda].forEach((t, i) => {
         const c = judul.getCell(i + 1);
         c.value = t;
-        c.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+        c.font = { bold: true, size: 11, color: { argb: TEKS_KEPALA_XLSX } };
+        c.fill = ISI_KEPALA_XLSX;
         c.alignment = { horizontal: 'center', vertical: 'middle' };
         c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
                      left: { style: 'thin' }, right: { style: 'thin' } };
@@ -4085,8 +4099,8 @@ async function unduhTabel(judul, kolom, data, subjudul) {
     ['No.', ...kolom.map(k => k[0])].forEach((t, i) => {
       const c = judulBaris.getCell(i + 1);
       c.value = t;
-      c.font = { bold: true, size: 10.5, color: { argb: 'FFFFFFFF' } };
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12262E' } };
+      c.font = { bold: true, size: 10.5, color: { argb: TEKS_KEPALA_XLSX } };
+      c.fill = ISI_KEPALA_XLSX;
       c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       c.border = { top: { style: 'thin' }, bottom: { style: 'thin' },
                    left: { style: 'thin' }, right: { style: 'thin' } };
