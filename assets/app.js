@@ -47,6 +47,11 @@ let ui = { qSiswa: '', kelasSiswa: '', statusSiswa: 'aktif', hal: 1, ukuran: 50,
            qGuru: '', statusGuru: 'Aktif', jenisTugas: '' };
 
 /* ---------------------------------------------------------------- util */
+/* Semester berjalan menurut kalender pendidikan: Juli–Desember 1, Januari–Juni 2.
+   Database tidak menyimpan "semester berjalan" — yang bersemester barisnya
+   (jadwal_kbm.semester) — dan batas 1 Januari aman karena libur semester selalu
+   melintasi pergantian tahun. Aturan yang sama dipakai Kehadiran Guru. */
+const semesterSekarang = () => (new Date().getMonth() + 1 >= 7 ? 1 : 2);
 const $  = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -219,7 +224,9 @@ async function muatSemua() {
   // Jadwal KBM beserta daftar jam pelajarannya.
   try {
     [D.jadwal, D.jamPel] = await Promise.all([
-      ambilSemua('v_jadwal', 'select=*'),
+      // Hanya tahun ajaran aktif: jadwal_kbm menyimpan semua tahun, dan
+      // tanpa saringan ini jadwal tahun lalu ikut tergambar dan terhitung.
+      ambilSemua('v_jadwal', 'select=*&tahun_ajaran=eq.' + enc(sesi.ta)),
       ambil('jam_pelajaran', 'select=*&order=jam_ke')
     ]);
   } catch (e) {
@@ -1395,7 +1402,7 @@ function pasangSeretMeja() {
    bentrok antar petugas — satu jam boleh dijaga beberapa orang — yang dicegah
    adalah satu orang berada di dua tempat sekaligus. */
 function bentrokMeja(guruId, hari, jamKe, kecualiId) {
-  const j = D.jadwal.find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
+  const j = D.jadwal.find(x => Number(x.semester) === semesterSekarang() && x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
   if (j) return `sedang mengajar ${j.mapel || ''} di ${j.kelas || ''}`.replace(/\s+/g, ' ').trim();
   const u = (D.piketUnit || []).find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
   if (u) return `sedang menjaga ${u.unit || 'unit'}`;
@@ -1824,9 +1831,12 @@ const peringkatGuru = () => {
 
 function halJadwal() {
   const sudut = ui.jadwalSudut || 'kelas';          // 'kelas', 'guru', atau 'hari'
-  // Semester bawaan mengikuti isi datanya, bukan ditebak.
-  const smtAda = [...new Set(D.jadwal.map(j => Number(j.semester)))].sort();
-  const smt = ui.jadwalSemester || smtAda[0] || 1;
+  // Semester bawaan adalah semester yang sedang berjalan menurut tanggal —
+  // bukan semester pertama yang ada datanya, supaya begitu semester 2 mulai,
+  // halaman ini langsung membuka semester 2 dan jadwalnya bisa disusun di
+  // situ walau masih kosong.
+  const smtAda = [...new Set(D.jadwal.map(j => Number(j.semester) || 1))].sort();
+  const smt = ui.jadwalSemester || semesterSekarang();
   const jadwalSmt = D.jadwal.filter(j => j.semester == smt);
   // Sabtu hanya ditampilkan bila memang ada jadwalnya.
   const hariAda = HARI.filter(h => h !== 'Sabtu' || jadwalSmt.some(j => j.hari === 'Sabtu'));
@@ -2017,7 +2027,7 @@ function halJadwal() {
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Jadwal KBM</h1>
       <p>Disunting di sini; aplikasi Kehadiran Guru hanya membacanya.
-         Tahun ajaran ${esc(sesi.ta)}, semester ${smt}.</p></div>
+         Tahun ajaran ${esc(sesi.ta)}, semester ${smt}${smt === semesterSekarang() ? ' (berjalan)' : ''}.</p></div>
       <div class="sp"></div>
       ${sudut !== 'hari' ? '<button class="btn" id="bUnduhJadwal">Unduh (xlsx)</button>' : ''}
       <button class="btn" id="bUnduhSemua">Unduh semua kelas</button></div>
@@ -2041,8 +2051,8 @@ function halJadwal() {
         ${hariAda.map(h => `<button class="${h === hariPilih ? 'on' : ''}" data-hari-pilih="${h}">${h}</button>`).join('')}
       </div>`}
       <select class="field" id="fSemester" style="width:auto">
-        ${(smtAda.length ? smtAda : [1, 2]).map(n =>
-          `<option value="${n}" ${smt == n ? 'selected' : ''}>Semester ${n}</option>`).join('')}
+        ${[1, 2].map(n =>
+          `<option value="${n}" ${smt == n ? 'selected' : ''}>Semester ${n}${n === 1 ? ' · Jul–Des' : ' · Jan–Jun'}${smtAda.includes(n) ? '' : ' (kosong)'}</option>`).join('')}
       </select>
       <div class="sp" style="flex:1"></div>
       <div class="info kecil">${jmlJam} jam ${sudut === 'hari' ? 'hari ' + hariPilih : 'per minggu'}</div>
@@ -2066,9 +2076,11 @@ function halJadwal() {
       tampilan ini bersandar pada view <code>v_jadwal</code> yang dibuat di sana.</div>`
      : (!D.jadwal.length ? `<div class="info-box"><b>Belum ada jadwal tersimpan.</b>
         Tabel jadwal terbaca, tetapi isinya kosong untuk tahun ajaran ${esc(sesi.ta)}.</div>`
+     : (!jadwalSmt.length ? `<div class="info-box"><b>Belum ada jadwal semester ${smt}</b> tahun ajaran ${esc(sesi.ta)}.
+        ${smtAda.length ? 'Semester ' + smtAda.join(' dan ') + ' sudah terisi. ' : ''}Ketuk sel <b>+</b> untuk mulai menyusun jadwal semester ${smt}.</div>`
      : (sudut !== 'hari' && !jmlJam ? `<div class="info-box">Tidak ada jam pelajaran untuk
         <b>${esc(pilih)}</b> pada semester ${smt}.
-        ${smtAda.length > 1 ? 'Coba ganti semesternya.' : ''}</div>` : ''))}
+        ${smtAda.length > 1 ? 'Coba ganti semesternya.' : ''}</div>` : '')))}
 
     <div class="panel"><div class="mx-scroll"><table class="mx" style="min-width:${lebarMin}px"><thead><tr>
       <th class="mx-sudut">${sudut === 'hari' ? (matriksProgram ? 'Kelompok' : 'Kelas') : 'Hari'}</th>${kepala}
@@ -2420,7 +2432,7 @@ function halKelompok() {
     // dari satu guru — tanggung jawabnya bersama, jadi seluruh namanya
     // ditulis, bukan dipilih salah satu.
     const pembimbing = [...new Set(D.jadwal
-      .filter(j => j.kelas === kel.nama)
+      .filter(j => j.kelas === kel.nama && Number(j.semester) === semesterSekarang())
       .map(j => j.guru))].sort().join(', ');
     unduhAbsenXlsx('Daftar Hadir ' + (kel.mapel || 'Kelompok Belajar'),
       { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: pembimbing },
@@ -2808,7 +2820,7 @@ function bacaMuatan(ev) {
 /* Satu guru tidak boleh berada di dua tempat pada jam yang sama. Diperiksa di
    sini karena sumbernya tiga tabel berbeda; pesannya menyebut bentrok apa. */
 function bentrokUnit(guruId, hari, jamKe, kecualiId) {
-  const j = D.jadwal.find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
+  const j = D.jadwal.find(x => Number(x.semester) === semesterSekarang() && x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
   if (j) return `sedang mengajar ${j.mapel || ''} di ${j.kelas || ''}`.replace(/\s+/g, ' ').trim();
   const m = (D.piketJadwal || []).find(x => x.guru_id === guruId && x.hari === hari && Number(x.jam_ke) === jamKe);
   if (m) return 'sedang piket meja sekolah';
