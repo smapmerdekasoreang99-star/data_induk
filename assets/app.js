@@ -165,7 +165,7 @@ async function muatSemua() {
     ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc'),
     ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
     ambil('mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
-    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
+    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,honor_mengajar,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
     ambil('jabatan', 'select=nama,kategori,aktif&order=urutan'),
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
   ]);
@@ -1027,7 +1027,7 @@ const teksPola = t => {
   if (t.jenis !== 'Staf') return '';
   const pola = (POLA_HONOR.find(([v]) => v === t.pola_honor) || POLA_HONOR[0])[1].toLowerCase();
   const sumber = t.pola_honor === 'bulanan' ? '' : t.sumber_hadir === 'manual' ? ' · absen manual' : ' · fingerprint';
-  return pola + sumber;
+  return pola + sumber + (t.honor_mengajar ? ' · mengajar di luar tupoksi: honor mengajar dibayar' : '');
 };
 /* Aturan sekolah: jam piket meja sekolah dicatat di tugas yang menentukan
    perlakuannya. Bagi guru yang juga Staf, itu baris Staf-nya (tanpa transport,
@@ -1131,7 +1131,8 @@ function halTugas() {
 
 function formTugas(t) {
   const baru = !t;
-  const awal = t ? { ...t, rombel_ref: kodeRombel(t.rombel_id) }
+  // honor_mengajar tersimpan sebagai boolean; di formulir dipilih 'ya' / kosong.
+  const awal = t ? { ...t, rombel_ref: kodeRombel(t.rombel_id), honor_mengajar: t.honor_mengajar ? 'ya' : '' }
                  : { guru_id: ui.guruTugas || '', jenis: 'Wali Kelas',
                      mulai: new Date().toISOString().slice(0, 10) };
   const penjelasan = n => (D.jenis.find(j => j.nama === n.jenis) || {}).penjelasan || '';
@@ -1175,6 +1176,15 @@ function formTugas(t) {
         bila: n => n.jenis === 'Staf' && (n.pola_honor || 'bulanan') !== 'bulanan',
         opsi: SUMBER_HADIR.map(([v, t]) => ({ v, t })),
         hint: 'Fingerprint dibandingkan dengan ketentuan di halaman Jam Kerja Staf; absen manual dicatat petugas di Kehadiran Guru.' },
+      /* Aturan sekolah: tugas Staf menggugurkan honor mengajar. Pengecualiannya
+         dinyatakan di sini per tugas, bukan per orang — mis. tenaga kependidikan
+         kontrak yang dilibatkan mengajar di luar tupoksinya. */
+      { k: 'honor_mengajar', label: 'Jam mengajarnya', tipe: 'pilih',
+        bila: n => n.jenis === 'Staf',
+        opsi: [{ v: '', t: 'Termasuk tupoksi — tidak dibayar honor mengajar (bawaan)' },
+               { v: 'ya', t: 'Di luar tupoksi — honor mengajar dan transport berdiri tetap dibayar' }],
+        hint: 'Hanya berlaku bila orang ini juga ada di jadwal KBM. Insentif tatap muka dan konsumsi '
+            + 'tetap tidak dibayar, karena masih dalam jam kerjanya lewat fingerprint.' },
 
       { k: 'jam_tambahan_mengajar', label: 'Jam tambahan mengajar per minggu', tipe: 'angka', wajib: true,
         bila: n => sifat(n.jenis, 'tambah_jam_mengajar'),
@@ -1220,6 +1230,7 @@ function formTugas(t) {
         jam_piket: sifat(n.jenis, 'piket_sekolah') && !piketIkutStaf({ ...n, id: t && t.id }) ? Number(n.jam_piket) : null,
         pola_honor: n.jenis === 'Staf' ? (n.pola_honor || 'bulanan') : null,
         sumber_hadir: n.jenis === 'Staf' ? (n.sumber_hadir || 'fingerprint') : null,
+        honor_mengajar: n.jenis === 'Staf' && n.honor_mengajar === 'ya',
         keterangan: n.keterangan || null, mulai: n.mulai || null, aktif: true
       };
       if (MODE === 'contoh') {
