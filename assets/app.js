@@ -351,6 +351,8 @@ function dataContoh() {
     { id:'T4', guru_id:'G002', jenis:'Piket', rombel_id:null, jabatan:null,
       jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:8, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
     { id:'T5', guru_id:'G002', jenis:'Tugas Tambahan', rombel_id:null, jabatan:null,
+      jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:null, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
+    { id:'T6', guru_id:'G003', jenis:'Wali Kelas', rombel_id:'R1', jabatan:null,
       jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:null, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta }
   ];
 
@@ -430,8 +432,11 @@ function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus }) {
 
   const gambarKolom = () => kolom.filter(k => !k.bila || k.bila(isi)).map(k => {
     const v = isi[k.k] == null ? '' : isi[k.k];
+    const hint = typeof k.hint === 'function' ? k.hint(isi) : k.hint;
     let kendali;
-    if (k.tipe === 'pilih') {
+    if (k.tipe === 'info') {
+      kendali = '';                       // hanya label dan keterangan, tanpa isian
+    } else if (k.tipe === 'pilih') {
       kendali = `<select class="field" data-k="${k.k}" ${k.pemicu ? 'data-pemicu="1"' : ''}>` +
         (k.opsi || []).map(o => `<option value="${esc(o.v)}" ${String(o.v) === String(v) ? 'selected' : ''}>${esc(o.t)}</option>`).join('') +
         `</select>`;
@@ -445,7 +450,7 @@ function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus }) {
     }
     return `<div class="fg ${k.lebar === 'penuh' ? 'penuh' : ''}" data-fg="${k.k}">
       <label>${esc(k.label)}${k.wajib ? ' <span style="color:var(--danger)">*</span>' : ''}</label>
-      ${kendali}${k.hint ? `<div class="hint">${esc(k.hint)}</div>` : ''}</div>`;
+      ${kendali}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
   }).join('');
 
   const pasang = () => {
@@ -992,9 +997,22 @@ function rincianTugas(t) {
   if (t.rombel_id) return kodeRombel(t.rombel_id);
   return '—';
 }
+/* Aturan sekolah: jam piket meja sekolah dicatat di tugas yang menentukan
+   perlakuannya. Bagi guru yang juga Staf, itu baris Staf-nya (tanpa transport,
+   kehadiran fingerprint) — baris Wali Kelas-nya hanya menunjuk ke sana, tidak
+   punya angka sendiri. */
+const stafDari = (guruId, kecualiId) => D.tugas.find(x => x.aktif && x.jenis === 'Staf'
+  && x.guru_id === guruId && String(x.id) !== String(kecualiId));
+const piketIkutStaf = t => t.jenis !== 'Staf' && sifat(t.jenis, 'piket_sekolah') === 'Melekat'
+  ? stafDari(t.guru_id, t.id) : null;
+const teksPiketStaf = s => 'Melekat sebagai staf, jumlah piketnya '
+  + (s.jam_piket == null ? 'belum diisi' : s.jam_piket + ' jam');
+
 function jamTugas(t) {
   if (t.jam_tambahan_mengajar) return t.jam_tambahan_mengajar + ' jam tambahan mengajar/minggu';
   if (t.jam_piket_unit) return t.jam_piket_unit + ' jam piket unit/minggu';
+  const s = piketIkutStaf(t);
+  if (s) return teksPiketStaf(s);
   if (t.jam_piket != null && sifat(t.jenis, 'piket_sekolah')) return t.jam_piket + ' jam piket meja sekolah/minggu';
   return '';
 }
@@ -1005,7 +1023,7 @@ function belumLengkap(t) {
   if (sifat(t.jenis, 'tambah_jam_mengajar') && !t.jam_tambahan_mengajar) kurang.push('jam tambahan');
   if (sifat(t.jenis, 'jam_unit') && !t.jam_piket_unit) kurang.push('jam piket unit');
   // Nol boleh (memang tidak berjaga); yang dianggap kurang hanya bila belum diisi.
-  if (sifat(t.jenis, 'piket_sekolah') && t.jam_piket == null) kurang.push('jam piket');
+  if (sifat(t.jenis, 'piket_sekolah') && t.jam_piket == null && !piketIkutStaf(t)) kurang.push('jam piket');
   return kurang;
 }
 
@@ -1123,8 +1141,13 @@ function formTugas(t) {
         bila: n => sifat(n.jenis, 'jam_unit'),
         hint: 'Jam kehadiran di unit yang menjadi tanggung jawabnya. Menjadi dasar transport kedatangan. Bukan piket meja sekolah.' },
 
+      { k: 'piket_staf', label: 'Jam piket meja sekolah', tipe: 'info',
+        bila: n => !!piketIkutStaf({ ...n, id: t && t.id }),
+        hint: n => teksPiketStaf(piketIkutStaf({ ...n, id: t && t.id }))
+                 + '. Angkanya hanya bisa diubah lewat tugas Staf-nya.' },
+
       { k: 'jam_piket', label: 'Jam piket meja sekolah per minggu', tipe: 'angka', wajib: true,
-        bila: n => !!sifat(n.jenis, 'piket_sekolah'),
+        bila: n => !!sifat(n.jenis, 'piket_sekolah') && !piketIkutStaf({ ...n, id: t && t.id }),
         hint: 'Jam yang disepakati untuk berjaga di meja sekolah. Menjadi target penempatan di matriks '
             + 'Jadwal Piket; yang dibayar tetap mengikuti jadwal dan pelaksanaannya. Isi 0 bila memang tidak berjaga.' },
 
@@ -1151,7 +1174,7 @@ function formTugas(t) {
         jabatan: sifat(n.jenis, 'perlu_jabatan') ? n.jabatan : null,
         jam_tambahan_mengajar: sifat(n.jenis, 'tambah_jam_mengajar') ? Number(n.jam_tambahan_mengajar) : null,
         jam_piket_unit: sifat(n.jenis, 'jam_unit') ? Number(n.jam_piket_unit) : null,
-        jam_piket: sifat(n.jenis, 'piket_sekolah') ? Number(n.jam_piket) : null,
+        jam_piket: sifat(n.jenis, 'piket_sekolah') && !piketIkutStaf({ ...n, id: t && t.id }) ? Number(n.jam_piket) : null,
         keterangan: n.keterangan || null, mulai: n.mulai || null, aktif: true
       };
       if (MODE === 'contoh') {
