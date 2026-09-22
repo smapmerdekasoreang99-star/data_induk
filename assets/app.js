@@ -38,7 +38,7 @@ const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
 
 let sesi = { token: '', petugas: '', ta: '2026/2027' };
 let D = { siswa: [], guru: [], rombel: [], mapel: [], tugas: [], tahun: [], jabatan: [],
-          jenis: [], piket: [], parkiran: [], piketUnit: [], ttd: {},
+          jenis: [], piket: [], parkiran: [], piketUnit: [], ttd: {}, jamKerja: [], jamKerjaGuru: [],
           kelompok: [], anggota: [], belumKelompok: [], dikecualikan: [],
           jadwal: [], jamPel: [], piketJadwal: [], profil: null, galat: {} };
 let halaman = 'beranda';
@@ -165,7 +165,7 @@ async function muatSemua() {
     ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc'),
     ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
     ambil('mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
-    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
+    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
     ambil('jabatan', 'select=nama,kategori,aktif&order=urutan'),
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
   ]);
@@ -181,6 +181,11 @@ async function muatSemua() {
     // boleh menjatuhkan seluruh halaman piket.
     try { D.parkiran = await ambil('v_piket_parkiran', 'select=*&order=urutan_hari'); }
     catch (e) { D.parkiran = []; console.warn('v_piket_parkiran belum ada:', e.message); }
+    // Ketentuan jam kerja staf; ditulis dari halaman Jam Kerja Staf.
+    try {
+      [D.jamKerja, D.jamKerjaGuru] = await Promise.all([
+        ambil('jam_kerja', 'select=*&order=urutan'), ambilSemua('jam_kerja_guru', 'select=*')]);
+    } catch (e) { D.jamKerja = []; D.jamKerjaGuru = []; console.warn('jam_kerja belum ada:', e.message); }
     try { D.piketUnit = await ambilSemua('v_jadwal_piket_unit', 'select=*'); }
     catch (e) { D.piketUnit = []; console.warn('v_jadwal_piket_unit belum ada:', e.message); }
     // Penanda tangan dokumen, diturunkan dari jabatan aktif di guru_tugas.
@@ -301,7 +306,9 @@ function dataContoh() {
     ['G001','1','Dra. Siti Aminah, M.Pd.','Matematika','Guru Tetap Yayasan','P','2010-07-12'],
     ['G002','2','Ahmad Fauzi, S.Pd.','PJOK','Guru Tidak Tetap','L','2021-07-12'],
     ['G003','3','Devy Resmisari, S.Pd.','Sejarah','Guru Tetap Yayasan','P','2004-07-19'],
-    ['G004','4','Rina Sulastri, S.Si.','Kimia','Guru Tetap Yayasan','P','2016-07-18']
+    ['G004','4','Rina Sulastri, S.Si.','Kimia','Guru Tetap Yayasan','P','2016-07-18'],
+    ['G005','5','Ujang Supriatna','','Tenaga Kependidikan','L','2018-07-16'],
+    ['G006','6','Yani Mulyani','','Tenaga Kependidikan','P','2023-01-09']
   ].map(([id, nig, nama, mapel, ptk, jk, tmt]) =>
     ({ id, nig, nama, mapel_utama: mapel, jenis_ptk: ptk, jenis_kelamin: jk,
        status_aktif: 'Aktif', tmt_sekolah: tmt, tmt_guru: tmt,
@@ -315,7 +322,7 @@ function dataContoh() {
       penjelasan:'Membina satu rombel. Piket meja sekolah melekat, dan kedatangan piketnya berhak transport.' },
     { nama:'Staf', perlu_rombel:false, perlu_jabatan:true, piket_sekolah:'Melekat',
       piket_libur:true, tambah_jam_mengajar:false, jam_unit:false, hak_transport:false,
-      penjelasan:'Jabatan struktural, bertugas penuh Senin-Sabtu. Kehadiran lewat fingerprint, tanpa transport piket terpisah.' },
+      penjelasan:'Jabatan struktural atau tenaga pendukung (satpam, kebersihan), bertugas penuh menurut jam kerja. Kehadiran lewat fingerprint atau absen manual; tanpa transport piket terpisah.' },
     { nama:'Tugas Tambahan', perlu_rombel:false, perlu_jabatan:true, piket_sekolah:null,
       piket_libur:false, tambah_jam_mengajar:true, jam_unit:false, hak_transport:false,
       penjelasan:'Dibayar hanya lewat penambahan jam mengajar. Bukan tatap muka, tanpa transport kedatangan.' },
@@ -338,14 +345,18 @@ function dataContoh() {
   D.jabatan = [
     ['Wakasek Kurikulum','Struktural'], ['Wakasek Kesiswaan','Struktural'],
     ['Penanggung Jawab Laboratorium IPA','Unit'], ['Penanggung Jawab Perpustakaan','Unit'],
-    ['Penanggung Jawab Ketertiban','Unit']
+    ['Penanggung Jawab Ketertiban','Unit'], ['Satpam','Pendukung'], ['Petugas Kebersihan','Pendukung']
   ].map(([nama, kategori]) => ({ nama, kategori, aktif: true }));
 
   D.tugas = [
     { id:'T1', guru_id:'G001', jenis:'Wali Kelas', rombel_id:'R0', jabatan:null,
       jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:4, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
-    { id:'T2', guru_id:'G003', jenis:'Staf', rombel_id:null, jabatan:'Wakasek Kesiswaan',
+    { id:'T2', guru_id:'G003', jenis:'Staf', rombel_id:null, jabatan:'Wakasek Kesiswaan', pola_honor:'bulanan', sumber_hadir:'fingerprint',
       jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:3, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
+    { id:'T7', guru_id:'G005', jenis:'Staf', rombel_id:null, jabatan:'Satpam', pola_honor:'bulanan_harian', sumber_hadir:'fingerprint',
+      jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:0, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
+    { id:'T8', guru_id:'G006', jenis:'Staf', rombel_id:null, jabatan:'Petugas Kebersihan', pola_honor:'harian', sumber_hadir:'manual',
+      jam_tambahan_mengajar:null, jam_piket_unit:null, jam_piket:0, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
     { id:'T3', guru_id:'G004', jenis:'Diperbantukan', rombel_id:null, jabatan:'Penanggung Jawab Laboratorium IPA',
       jam_tambahan_mengajar:null, jam_piket_unit:4, jam_piket:null, mulai:'2026-07-13', aktif:true, tahun_ajaran:sesi.ta },
     { id:'T4', guru_id:'G002', jenis:'Piket', rombel_id:null, jabatan:null,
@@ -379,6 +390,12 @@ function dataContoh() {
     ['PK5','G001','Rabu',1,'Wali Kelas',false], ['PK6','G001','Rabu',2,'Wali Kelas',false],
     ['PK7','G003','Kamis',4,'Staf',true], ['PK8','G003','Kamis',5,'Staf',true]
   ].map(([id, guru_id, hari, jam_ke, dasar, staf]) => ({ id, guru_id, guru: namaGuru(guru_id), hari, jam_ke, dasar, staf }));
+  D.jamKerja = [['Senin','06:30','15:45'],['Selasa','06:30','15:45'],['Rabu','06:30','15:45'],
+                ['Kamis','06:30','15:45'],['Jumat','06:30','14:30'],['Sabtu',null,null]]
+    .map(([hari, masuk, pulang], i) => ({ hari, urutan: i + 1, aktif: !!masuk, masuk, pulang }));
+  D.jamKerjaGuru = [
+    { guru_id:'G003', hari:'Jumat', libur:false, masuk:'06:30', pulang:'13:30', catatan:'Kuliah sore' }
+  ];
   D.parkiran = [
     { hari:'Senin',  urutan_hari:1, guru_id:'G003', nama:'Devy Resmisari, S.Pd.', jenis_ptk:'Guru Tetap Yayasan', status_aktif:'Aktif', catatan:null },
     { hari:'Selasa', urutan_hari:2, guru_id:'G003', nama:'Devy Resmisari, S.Pd.', jenis_ptk:'Guru Tetap Yayasan', status_aktif:'Aktif', catatan:null }
@@ -443,7 +460,7 @@ function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus }) {
     } else if (k.tipe === 'panjang') {
       kendali = `<textarea class="field" data-k="${k.k}">${esc(v)}</textarea>`;
     } else {
-      const t = k.tipe === 'tanggal' ? 'date' : 'text';
+      const t = k.tipe === 'tanggal' ? 'date' : k.tipe === 'waktu' ? 'time' : 'text';
       kendali = `<input class="field${k.tipe === 'angka' ? ' num' : ''}" type="${t}" data-k="${k.k}" value="${esc(v)}"
         ${k.tipe === 'angka' ? 'inputmode="numeric"' : ''} ${k.daftar ? `list="dl-${k.k}"` : ''} autocomplete="off">` +
         (k.daftar ? `<datalist id="dl-${k.k}">${k.daftar.map(d => `<option value="${esc(d)}">`).join('')}</datalist>` : '');
@@ -551,7 +568,7 @@ function layarUtama() {
 function gambar() {
   if (!$('#isi')) return;
   ({ beranda: halBeranda, siswa: halSiswa, guru: halGuru, tugas: halTugas,
-     kelas: halKelas, jadwal: halJadwal, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, profil: halProfil, tahun: halTahun }[halaman] || halBeranda)();
+     kelas: halKelas, jadwal: halJadwal, kelompok: halKelompok, mapel: halMapel, jabatan: halJabatan, piket: halPiket, jamkerja: halJamKerja, profil: halProfil, tahun: halTahun }[halaman] || halBeranda)();
   gambarSelbar();
 }
 
@@ -997,6 +1014,21 @@ function rincianTugas(t) {
   if (t.rombel_id) return kodeRombel(t.rombel_id);
   return '—';
 }
+/* Pola honor tenaga kependidikan — per orang, bukan per jenis. Rupiahnya di
+   Induk Pembiayaan; di sini hanya siapa berpola apa dan dari mana hari
+   hadirnya dihitung. */
+const POLA_HONOR = [
+  ['bulanan',        'Honor bulanan saja'],
+  ['bulanan_harian', 'Honor bulanan + insentif kedatangan per hari hadir'],
+  ['harian',         'Upah harian per kedatangan saja']
+];
+const SUMBER_HADIR = [['fingerprint', 'Mesin fingerprint'], ['manual', 'Absen manual oleh petugas']];
+const teksPola = t => {
+  if (t.jenis !== 'Staf') return '';
+  const pola = (POLA_HONOR.find(([v]) => v === t.pola_honor) || POLA_HONOR[0])[1].toLowerCase();
+  const sumber = t.pola_honor === 'bulanan' ? '' : t.sumber_hadir === 'manual' ? ' · absen manual' : ' · fingerprint';
+  return pola + sumber;
+};
 /* Aturan sekolah: jam piket meja sekolah dicatat di tugas yang menentukan
    perlakuannya. Bagi guru yang juga Staf, itu baris Staf-nya (tanpa transport,
    kehadiran fingerprint) — baris Wali Kelas-nya hanya menunjuk ke sana, tidak
@@ -1073,6 +1105,7 @@ function halTugas() {
             <td style="font-weight:500">${esc(namaGuru(t.guru_id))}</td>
             <td><span class="tag tag-l">${esc(t.jenis)}</span></td>
             <td>${esc(rincianTugas(t))}
+              ${t.jenis === 'Staf' ? `<div class="kecil">${esc(teksPola(t))}</div>` : ''}
               ${kurang.length ? `<div class="kecil" style="color:var(--warn)">belum ada: ${esc(kurang.join(', '))}</div>` : ''}</td>
             <td class="hide-sm kecil">${esc(jamTugas(t) || '—')}</td>
             <td class="num hide-sm">${tglIndo(t.mulai)}</td>
@@ -1133,6 +1166,16 @@ function formTugas(t) {
           ? 'Belum ada di daftar? Tambahkan lewat halaman Jabatan dan Unit, daftar ini langsung ikut terbarui.'
           : 'Daftar jabatan masih kosong. Isi lebih dulu lewat halaman Jabatan dan Unit.' },
 
+      { k: 'pola_honor', label: 'Pola honor', tipe: 'pilih', pemicu: true,
+        bila: n => n.jenis === 'Staf',
+        opsi: POLA_HONOR.map(([v, t]) => ({ v, t })),
+        hint: 'Staf pada umumnya honor bulanan saja. Staf kontrak dan satpam: bulanan + insentif kedatangan. '
+            + 'Tenaga harian: upah per kedatangan. Nominalnya diisi di Induk Pembiayaan.' },
+      { k: 'sumber_hadir', label: 'Hari hadir dihitung dari', tipe: 'pilih',
+        bila: n => n.jenis === 'Staf' && (n.pola_honor || 'bulanan') !== 'bulanan',
+        opsi: SUMBER_HADIR.map(([v, t]) => ({ v, t })),
+        hint: 'Fingerprint dibandingkan dengan ketentuan di halaman Jam Kerja Staf; absen manual dicatat petugas di Kehadiran Guru.' },
+
       { k: 'jam_tambahan_mengajar', label: 'Jam tambahan mengajar per minggu', tipe: 'angka', wajib: true,
         bila: n => sifat(n.jenis, 'tambah_jam_mengajar'),
         hint: 'Dibayar lewat penambahan jam mengajar. Bukan tatap muka, dan tidak menimbulkan transport kedatangan.' },
@@ -1175,6 +1218,8 @@ function formTugas(t) {
         jam_tambahan_mengajar: sifat(n.jenis, 'tambah_jam_mengajar') ? Number(n.jam_tambahan_mengajar) : null,
         jam_piket_unit: sifat(n.jenis, 'jam_unit') ? Number(n.jam_piket_unit) : null,
         jam_piket: sifat(n.jenis, 'piket_sekolah') && !piketIkutStaf({ ...n, id: t && t.id }) ? Number(n.jam_piket) : null,
+        pola_honor: n.jenis === 'Staf' ? (n.pola_honor || 'bulanan') : null,
+        sumber_hadir: n.jenis === 'Staf' ? (n.sumber_hadir || 'fingerprint') : null,
         keterangan: n.keterangan || null, mulai: n.mulai || null, aktif: true
       };
       if (MODE === 'contoh') {
@@ -2100,17 +2145,20 @@ function halJadwal() {
       if (s.sela) return '<td class="mx-sela"></td>';
       const skr = b.hari === hariNyata && jamBerjalan() === s.jk ? ' skr' : '';
       const sambung = (s.kiri ? ' kiri' : '') + (s.kanan ? ' kanan' : '');
+      // Blok awal rangkaian jam berturut-turut menyebut panjangnya, supaya
+      // satu blok panjang tidak terbaca sebagai satu jam.
+      const jam = !s.kiri && s.rentang > 1 ? `<small class="jam">${s.rentang} jam</small>` : '';
       const gaya = w => `style="--bg:${w[0]};--aksen:${w[1]};--rentang:${s.rentang}"`;
       if (s.ringkas) {
         if (!s.ringkas.length) return `<td class="mx-sel${skr}"></td>`;
         const ket = ketRingkas(s.ringkas);
         return `<td class="mx-sel${skr}"><div class="mx-blok ringkas${sambung}" data-lingkup="${esc(b.grup)}"
           ${gaya(warnaMapel(s.ringkas[0].mapel))} title="${esc('Kelompok ' + b.grup + ' · ' + ket + '\nKlik untuk membuka matriks ' + b.grup)}">
-          <span class="u">Kelompok ${esc(b.grup)}</span><span class="k">${esc(ket)} ›</span></div></td>`;
+          <span class="u">Kelompok ${esc(b.grup)}</span><span class="k">${esc(ket)} ›${jam}</span></div></td>`;
       }
       if (s.kunci) return `<td class="mx-sel${skr}"><div class="mx-blok kunci${sambung}" style="--rentang:${s.rentang}"
           title="${esc(s.kunci.join(' · ') + ' — siswa berangkat ke kelompoknya masing-masing.\nDisusun dari jadwal kelompoknya.')}">
-          <span class="u">${esc(s.kunci.join(' · '))}</span><span class="k">jam kelompok</span></div></td>`;
+          <span class="u">${esc(s.kunci.join(' · '))}</span><span class="k">jam kelompok${jam}</span></div></td>`;
       const data = `data-hari="${esc(b.hari)}" data-jam="${s.jk}" data-kelas="${esc(b.kelas || '')}"`;
       if (!s.daftar.length) return `<td class="mx-sel kosong${skr}" ${data}><span class="mx-tambah">+</span></td>`;
       const bentrok = sudut === 'guru' && new Set(s.daftar.map(j => j.kelas)).size > 1;
@@ -2120,7 +2168,7 @@ function halJadwal() {
         const judul = `${j.hari} · Jam ke-${j.jam_ke}${jp ? ` (${jam5(jp.mulai)}–${jam5(jp.selesai)})` : ''}\n`
                     + `${j.kelas} — ${j.mapel}\n${j.guru}\nKlik untuk mengubah atau menghapus`;
         return `<div class="mx-blok${sambung}${banyak ? ' rapat' : ''}" data-jid="${esc(j.id)}" ${gaya(warnaMapel(j.mapel))} title="${esc(judul)}">
-          <span class="u">${esc(utama(j))}</span><span class="k">${esc(kedua(j))}</span></div>`;
+          <span class="u">${esc(utama(j))}</span><span class="k">${esc(kedua(j))}${jam}</span></div>`;
       }).join('');
       return `<td class="mx-sel${skr}${bentrok ? ' bentrok' : ''}" ${data}>
         ${banyak ? `<div class="mx-tumpuk">${blok}</div>` : blok}</td>`;
@@ -3081,6 +3129,207 @@ function formParkiran(hari) {
 }
 
 /* ------------------------------------------------------------ kelas */
+/* ------------------------------------------------- jam kerja staf */
+/* Ketentuan jam kerja bagi pemegang tugas Staf: bawaan sekolah per hari,
+   ditambah pengecualian per orang (libur pada hari tertentu, atau jam yang
+   berbeda dari bawaan). Disimpan di sini — satu tempat mengubah — dan dibaca
+   Kehadiran Guru untuk dibandingkan dengan rekaman mesin fingerprint.      */
+const HARI_KERJA = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const menitDari = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+const teksMenit = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const teksDurasi = menit => { const j = Math.floor(menit / 60), m = menit % 60; return j + ' jam' + (m ? ' ' + m + ' mnt' : ''); };
+const bawaanHari = h => D.jamKerja.find(x => x.hari === h) || { hari: h, aktif: false, masuk: null, pulang: null };
+const kecualiHari = (guruId, h) => D.jamKerjaGuru.find(r => r.guru_id === guruId && r.hari === h);
+// Jam kerja efektif seorang staf pada satu hari: bawaan, khusus, atau libur.
+function efektifHari(guruId, h) {
+  const b = bawaanHari(h), x = kecualiHari(guruId, h);
+  if (!x) return { sumber: 'bawaan', bekerja: !!b.aktif, masuk: b.masuk, pulang: b.pulang };
+  if (x.libur) return { sumber: 'libur', bekerja: false, masuk: null, pulang: null, catatan: x.catatan };
+  return { sumber: 'khusus', bekerja: true, masuk: x.masuk, pulang: x.pulang, catatan: x.catatan };
+}
+const lamaHari = e => e.bekerja ? menitDari(e.pulang) - menitDari(e.masuk) : 0;
+const menitMinggu = ambil => HARI_KERJA.reduce((a, h) => a + lamaHari(ambil(h)), 0);
+const stafTunduk = () => D.guru.filter(g => g.status_aktif === 'Aktif' && stafDari(g.id));
+const rentangJam = e => e.bekerja ? jam5(e.masuk) + '–' + jam5(e.pulang) : 'libur';
+
+function halJamKerja() {
+  const staf = stafTunduk();
+  const bawaan = h => efektifHari('__bawaan__', h);
+  const hariAktif = HARI_KERJA.filter(h => bawaanHari(h).aktif).length;
+
+  // Skala pita waktu: dari jam masuk paling pagi sampai jam pulang paling
+  // sore di seluruh ketentuan, dibulatkan ke jam penuh.
+  const semua = [...D.jamKerja.filter(x => x.aktif), ...D.jamKerjaGuru.filter(x => !x.libur)];
+  const a = Math.floor(Math.min(6 * 60, ...semua.map(x => menitDari(x.masuk))) / 60) * 60;
+  const b = Math.ceil(Math.max(16 * 60, ...semua.map(x => menitDari(x.pulang))) / 60) * 60;
+  const pita = e => {
+    if (!e.bekerja) return '<div class="jk-bar libur"></div>';
+    const kiri = (menitDari(e.masuk) - a) / (b - a) * 100, lebar = lamaHari(e) / (b - a) * 100;
+    return `<div class="jk-bar"><i style="left:${kiri}%;width:${lebar}%"></i></div>`;
+  };
+  const skala = [];
+  for (let m = a; m <= b; m += 120) skala.push(teksMenit(m));
+
+  $('#isi').innerHTML = `
+    <div class="head"><div><h1>Jam Kerja Staf</h1>
+      <p>Ketentuan jam masuk dan pulang bagi pemegang tugas Staf. Rekaman mesin fingerprint
+         dibandingkan dengan ketentuan ini di aplikasi Kehadiran Guru.</p></div></div>
+
+    ${!D.jamKerja.length ? `<div class="panel"><div class="empty"><b>Ketentuan jam kerja belum terbaca</b>
+      Jalankan migrasi database terbaru, lalu muat ulang halaman.</div></div>` : `
+    <div class="kartu-baris">
+      <div class="kartu"><b>${staf.length}</b><span>staf tunduk jam kerja</span></div>
+      <div class="kartu"><b>${hariAktif}</b><span>hari kerja per minggu</span></div>
+      <div class="kartu"><b>${teksDurasi(menitMinggu(bawaan))}</b><span>jam kerja bawaan per minggu</span></div>
+      <div class="kartu"><b>${D.jamKerjaGuru.length}</b><span>pengecualian per orang</span></div>
+    </div>
+
+    <div class="panel"><div class="panel-head"><h3>Ketentuan bawaan sekolah</h3>
+      <div class="sp" style="flex:1"></div><div class="info">ketuk hari untuk mengubah</div></div>
+      <div class="jk-grid">${HARI_KERJA.map(h => {
+        const e = bawaan(h);
+        return `<button class="jk-hari${e.bekerja ? '' : ' libur'}" data-hari="${h}"
+          title="${esc(h + ': ' + (e.bekerja ? jam5(e.masuk) + ' – ' + jam5(e.pulang) : 'libur') + '\nKetuk untuk mengubah')}">
+          <b>${h}</b>
+          <span class="jk-jam">${e.bekerja ? jam5(e.masuk) + ' – ' + jam5(e.pulang) : 'Libur'}</span>
+          ${pita(e)}
+          <small>${e.bekerja ? teksDurasi(lamaHari(e)) : 'tidak ada jam kerja'}</small></button>`;
+      }).join('')}</div>
+      <div class="jk-skala">${skala.map(t => `<span>${t}</span>`).join('')}</div>
+    </div>
+
+    <div class="panel"><div class="panel-head"><h3>Staf yang tunduk</h3>
+      <div class="sp" style="flex:1"></div><div class="info">dari tugas Staf aktif di Tugas Guru</div></div>
+      <div class="scroll"><table><thead><tr>
+        <th style="min-width:200px">Staf</th>
+        ${HARI_KERJA.map(h => `<th class="jk-th">${h.slice(0, 3)}</th>`).join('')}
+        <th style="width:90px" class="num">Jam/minggu</th><th style="width:60px"></th>
+      </tr></thead><tbody>${
+        staf.length ? staf.map(g => {
+          const t = stafDari(g.id);
+          const nKhusus = HARI_KERJA.filter(h => kecualiHari(g.id, h)).length;
+          return `<tr data-id="${esc(g.id)}">
+            <td style="font-weight:500">${esc(g.nama)}<div class="kecil">${esc(t.jabatan || '—')}${
+              t.sumber_hadir === 'manual' ? ' · absen manual' : ''}${nKhusus ? ` · ${nKhusus} hari berbeda dari bawaan` : ''}</div></td>
+            ${HARI_KERJA.map(h => {
+              const e = efektifHari(g.id, h);
+              return `<td class="jk-td"><span class="jk-chip ${e.sumber}${e.bekerja ? '' : ' off'}"
+                title="${esc(h + ': ' + rentangJam(e) + ' (' + e.sumber + ')' + (e.catatan ? '\n' + e.catatan : ''))}">${rentangJam(e)}</span></td>`;
+            }).join('')}
+            <td class="num">${teksDurasi(menitMinggu(h => efektifHari(g.id, h)))}</td>
+            <td class="act"><button class="btn btn-sm bAtur">Atur</button></td></tr>`;
+        }).join('')
+        : `<tr><td colspan="${HARI_KERJA.length + 3}"><div class="empty"><b>Belum ada pemegang tugas Staf</b>
+            Catatkan lewat halaman Tugas Guru dengan jenis Staf.</div></td></tr>`
+      }</tbody></table></div>
+      <div class="foot"><div class="info">
+        <span class="jk-legenda bawaan">ikut bawaan</span>
+        <span class="jk-legenda khusus">jam khusus</span>
+        <span class="jk-legenda libur">libur khusus</span></div></div>
+    </div>
+
+    <p class="kecil">Yang tunduk pada ketentuan ini adalah pemegang tugas Staf yang aktif di Tugas Guru,
+      termasuk staf kontrak. Tanpa pengecualian, semuanya mengikuti ketentuan bawaan; ketuk <b>Atur</b>
+      untuk staf yang harinya berbeda, misalnya kontrak Senin–Jumat saja. Guru yang bukan staf tidak
+      diatur di sini: jam kerjanya mengikuti jadwal mengajar.</p>`}`;
+
+  $$('.jk-hari').forEach(b => b.onclick = () => formJamKerjaHari(b.dataset.hari));
+  $$('tbody tr[data-id] .bAtur').forEach(b => b.onclick = () => {
+    const g = D.guru.find(x => x.id === b.closest('tr').dataset.id);
+    if (g) dialogJamKerjaGuru(g);
+  });
+}
+
+function formJamKerjaHari(hari) {
+  const b = bawaanHari(hari);
+  formulir({
+    judul: 'Jam kerja bawaan — ' + hari,
+    nilai: { aktif: b.aktif ? 'ya' : 'tidak', masuk: jam5(b.masuk) || '06:30', pulang: jam5(b.pulang) || '15:45' },
+    kolom: [
+      { k: 'aktif', label: 'Hari kerja', tipe: 'pilih', pemicu: true,
+        opsi: [{ v: 'ya', t: 'Ya — staf bekerja pada hari ini' }, { v: 'tidak', t: 'Tidak — libur kerja' }] },
+      { k: 'masuk',  label: 'Jam masuk',  tipe: 'waktu', wajib: true, bila: n => n.aktif === 'ya' },
+      { k: 'pulang', label: 'Jam pulang', tipe: 'waktu', wajib: true, bila: n => n.aktif === 'ya',
+        hint: 'Berlaku bagi semua staf yang tidak punya pengecualian pada hari ini.' }
+    ],
+    simpan: async n => {
+      const aktif = n.aktif === 'ya';
+      if (aktif && menitDari(n.pulang) <= menitDari(n.masuk)) throw new Error('Jam pulang harus sesudah jam masuk.');
+      const isi = { aktif, masuk: aktif ? n.masuk : null, pulang: aktif ? n.pulang : null };
+      if (MODE === 'db') await perbarui('jam_kerja', `hari=eq.${enc(hari)}`, isi);
+      Object.assign(b, isi);
+      if (!D.jamKerja.includes(b)) D.jamKerja.push({ urutan: HARI_KERJA.indexOf(hari) + 1, ...b });
+      toast(hari + ': ' + (aktif ? n.masuk + '–' + n.pulang : 'libur'));
+    }
+  });
+}
+
+/* Pengecualian per orang: tiap hari boleh ikut bawaan, jam khusus, atau libur.
+   Satu tabel kecil, bukan formulir umum, supaya enam hari terlihat sekaligus. */
+function dialogJamKerjaGuru(g) {
+  const MODE_JK = [['bawaan', 'Ikut bawaan'], ['khusus', 'Jam khusus'], ['libur', 'Libur']];
+  const catatanLama = (D.jamKerjaGuru.find(r => r.guru_id === g.id && r.catatan) || {}).catatan || '';
+
+  bukaModal(`<h2>Jam kerja — ${esc(g.nama)}</h2><div class="body">
+    <p class="msg kecil">Tanpa pengecualian, staf mengikuti ketentuan bawaan sekolah.
+      Ubah hanya hari yang memang berbeda.</p>
+    <table class="log jk-atur"><thead><tr>
+      <th>Hari</th><th style="width:150px">Ketentuan</th><th style="width:105px">Masuk</th><th style="width:105px">Pulang</th>
+    </tr></thead><tbody>${HARI_KERJA.map(h => {
+      const b = bawaanHari(h), x = kecualiHari(g.id, h);
+      const mode = !x ? 'bawaan' : x.libur ? 'libur' : 'khusus';
+      return `<tr data-hari="${h}">
+        <td><b>${h}</b><div class="kecil">bawaan: ${b.aktif ? jam5(b.masuk) + '–' + jam5(b.pulang) : 'libur'}</div></td>
+        <td><select class="field" data-mode>${MODE_JK.map(([v, t]) =>
+          `<option value="${v}" ${v === mode ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+        <td><input class="field" type="time" data-masuk value="${mode === 'khusus' ? jam5(x.masuk) : ''}" ${mode === 'khusus' ? '' : 'disabled'}></td>
+        <td><input class="field" type="time" data-pulang value="${mode === 'khusus' ? jam5(x.pulang) : ''}" ${mode === 'khusus' ? '' : 'disabled'}></td></tr>`;
+    }).join('')}</tbody></table>
+    <div class="fg" style="margin-top:14px"><label>Keterangan</label>
+      <input class="field" id="jkCatatan" value="${esc(catatanLama)}" autocomplete="off">
+      <div class="hint">Misalnya "Kontrak Senin–Jumat, masih studi". Disimpan pada tiap hari yang dikecualikan.</div></div>
+    </div>
+    <div class="aksi"><button class="btn" id="m-batal">Batal</button>
+      <button class="btn btn-p" id="m-simpan">Simpan</button></div>`, true);
+
+  $$('#modal-root [data-mode]').forEach(sel => sel.onchange = () => {
+    const tr = sel.closest('tr'), b = bawaanHari(tr.dataset.hari), khusus = sel.value === 'khusus';
+    const m = $('[data-masuk]', tr), p = $('[data-pulang]', tr);
+    m.disabled = p.disabled = !khusus;
+    if (khusus && !m.value) { m.value = jam5(b.masuk) || '06:30'; p.value = jam5(b.pulang) || '15:45'; }
+    if (!khusus) { m.value = ''; p.value = ''; }
+  });
+  $('#m-batal').onclick = tutupModal;
+  $('#m-simpan').onclick = () => {
+    const catatan = $('#jkCatatan').value.trim() || null;
+    const baris = [];
+    for (const tr of $$('#modal-root tr[data-hari]')) {
+      const hari = tr.dataset.hari, mode = $('[data-mode]', tr).value;
+      if (mode === 'bawaan') continue;
+      if (mode === 'libur') { baris.push({ guru_id: g.id, hari, libur: true, masuk: null, pulang: null, catatan }); continue; }
+      const masuk = $('[data-masuk]', tr).value, pulang = $('[data-pulang]', tr).value;
+      if (!masuk || !pulang) { toast(hari + ': isi jam masuk dan pulang.', true); return; }
+      if (menitDari(pulang) <= menitDari(masuk)) { toast(hari + ': jam pulang harus sesudah jam masuk.', true); return; }
+      baris.push({ guru_id: g.id, hari, libur: false, masuk, pulang, catatan });
+    }
+    tutupModal();
+    jalankan('Menyimpan…', async () => {
+      if (MODE === 'db') {
+        // Seluruh pengecualian orang ini ditulis ulang: yang kembali ke bawaan
+        // hilang, yang lain diganti — lebih sederhana daripada membandingkan satu-satu.
+        await buang('jam_kerja_guru', `guru_id=eq.${enc(g.id)}`);
+        if (baris.length) await api('/rest/v1/jam_kerja_guru', { method: 'POST', body: JSON.stringify(baris) });
+        D.jamKerjaGuru = await ambilSemua('jam_kerja_guru', 'select=*');
+      } else {
+        D.jamKerjaGuru = D.jamKerjaGuru.filter(r => r.guru_id !== g.id).concat(baris);
+      }
+      toast(`${namaPendek(g.nama)}: ${baris.length ? baris.length + ' hari dikecualikan' : 'ikut bawaan sepenuhnya'}`);
+    });
+  };
+}
+
+
+/* ------------------------------------------------------------- kelas */
 function halKelas() {
   const jml = kode => D.siswa.filter(s => s.kelas === kode && s.status === 'aktif').length;
   const wali = kode => {
@@ -3208,7 +3457,8 @@ function halJabatan() {
   const dipakai = nama => D.tugas.filter(t => t.jabatan === nama && t.aktif).length;
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Jabatan dan Unit</h1>
-      <p>Pilihan yang tersedia saat mencatat tugas Staf dan Diperbantukan.</p></div>
+      <p>Pilihan yang tersedia saat mencatat tugas Staf dan Diperbantukan. Tenaga pendukung
+         (satpam, kebersihan) dicatat sebagai Staf dengan jabatan berkategori Pendukung.</p></div>
       <div class="sp"></div><button class="btn btn-p" id="bTambah">+ Tambah jabatan</button></div>
     <div class="panel"><div class="panel-head"><div class="info">${D.jabatan.length} jabatan</div></div>
       <div class="scroll"><table><thead><tr>
@@ -3281,7 +3531,8 @@ function formJabatan(j) {
           : 'Contoh: Penanggung Jawab Laboratorium IPA' },
       { k: 'kategori', label: 'Kategori', tipe: 'pilih',
         opsi: [{ v: 'Struktural', t: 'Struktural — jabatan ber-SK' },
-               { v: 'Unit', t: 'Unit — penanggung jawab bidang' }] },
+               { v: 'Unit', t: 'Unit — penanggung jawab bidang' },
+               { v: 'Pendukung', t: 'Pendukung — satpam, kebersihan, tenaga harian' }] },
       { k: 'aktif', label: 'Status', tipe: 'pilih',
         opsi: [{ v: 'true', t: 'Aktif' }, { v: 'false', t: 'Nonaktif' }] }
     ],
@@ -4203,6 +4454,7 @@ function unduhCadangan() {
   tambah('Tugas', [['Guru', 'namaGuru'], ['ID Guru', 'guru_id'], ['Jenis', 'jenis'], ['Kelas', 'kelas'],
                    ['Jabatan', 'jabatan'], ['Jam tambahan mengajar', 'jam_tambahan_mengajar'],
                    ['Jam piket unit', 'jam_piket_unit'], ['Jam piket meja sekolah', 'jam_piket'],
+                   ['Pola honor', 'pola_honor'], ['Sumber hadir', 'sumber_hadir'],
                    ['Mulai', 'mulai'], ['Aktif', 'aktif'],
                    ['Tahun Ajaran', 'tahun_ajaran']],
          D.tugas.map(t => ({ ...t, namaGuru: namaGuru(t.guru_id), kelas: kodeRombel(t.rombel_id) })));

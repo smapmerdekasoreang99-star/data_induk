@@ -76,13 +76,14 @@ Unggah seluruh isi folder ini ke repo GitHub, aktifkan GitHub Pages.
 | Beranda | ringkasan jumlah, kelengkapan data, unduh cadangan |
 | Data Siswa | 684 siswa; tambah, ubah, pindah kelas massal, unggah CSV/Excel |
 | Data Guru | 39 guru dengan 19 isian; tugas melekat tampil di tiap baris |
-| Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul; jam piket meja sekolah dan jam piket unit yang disepakati dicatat di sini |
+| Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul; jam piket meja sekolah dan jam piket unit yang disepakati dicatat di sini. Tugas Staf juga menyimpan pola honor (bulanan, bulanan + insentif kedatangan, upah harian) dan sumber hari hadirnya (fingerprint / absen manual) |
 | Jadwal KBM | matriks hari × jam, per kelas atau per guru |
 | Kelompok Belajar | Tahsin dan Matematika Dasar beserta anggotanya |
 | Jadwal Piket | tiga tab: Piket Meja Sekolah (matriks jadwal dengan daftar sisa jam belum ditempatkan, petugas), Piket Unit + Diperbantukan, Piket parkiran. Ketiganya bisa diunduh sebagai xlsx berisi dua lembar: **Jadwal** dan **Formulir Paraf** (lihat di bawah) |
+| Jam Kerja Staf | ketentuan jam masuk–pulang bawaan sekolah per hari, dan pengecualian per staf (jam khusus atau libur); dibaca Kehadiran Guru untuk membandingkan rekaman fingerprint |
 | Kelas dan Rombel | 18 rombel tahun berjalan |
 | Mata Pelajaran | dibaca dari `kg_mapel`, dipakai bersama jadwal KBM |
-| Jabatan dan Unit | pilihan untuk tugas Staf dan Diperbantukan |
+| Jabatan dan Unit | pilihan untuk tugas Staf dan Diperbantukan; kategori Struktural, Unit, dan Pendukung (satpam, kebersihan) |
 | Tahun Ajaran | pergantian tahun dan pemandu kenaikan kelas |
 
 ### Unduhan halaman Piket: jadwal dan formulir paraf
