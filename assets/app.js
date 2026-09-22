@@ -324,7 +324,7 @@ function dataContoh() {
       penjelasan:'Penanggung jawab unit. Honor penanggung jawab plus transport pada jam piket unitnya. Bukan piket meja sekolah.' },
     { nama:'Piket', perlu_rombel:false, perlu_jabatan:false, piket_sekolah:'Ditugaskan',
       piket_libur:false, tambah_jam_mengajar:false, jam_unit:false, hak_transport:true,
-      penjelasan:'Ditugaskan khusus menambal jam piket meja sekolah.' },
+      penjelasan:'Ditugaskan khusus menambal jam piket meja sekolah, bagi guru yang bukan wali kelas dan bukan staf — pada keduanya piket sudah melekat.' },
     { nama:'Pembina Ekskul', perlu_rombel:false, perlu_jabatan:false, piket_sekolah:null,
       piket_libur:false, tambah_jam_mengajar:false, jam_unit:false, hak_transport:false,
       penjelasan:'Dicatat juga di aplikasi Absensi Ekskul.' },
@@ -1132,6 +1132,18 @@ function formTugas(t) {
       { k: 'keterangan', label: 'Keterangan', tipe: 'panjang' }
     ],
     simpan: async n => {
+      // Piket meja sekolah sudah melekat pada Wali Kelas dan Staf, jadi jam
+      // piketnya dicatat di baris itu. Tugas Piket hanya untuk guru yang
+      // bukan keduanya — mencatat dua-duanya membuat jamnya terhitung ganda.
+      const lain = D.tugas.filter(x => x.aktif && x.guru_id === n.guru_id && (!t || x.id !== t.id));
+      const melekat = lain.find(x => sifat(x.jenis, 'piket_sekolah') === 'Melekat');
+      if (n.jenis === 'Piket' && melekat)
+        throw new Error(`${namaGuru(n.guru_id)} sudah tercatat ${melekat.jenis}, dan piket meja sekolah melekat `
+                      + `pada tugas itu. Isi jam piketnya di baris ${melekat.jenis}, bukan sebagai tugas Piket.`);
+      const piketLama = lain.find(x => x.jenis === 'Piket');
+      if (sifat(n.jenis, 'piket_sekolah') === 'Melekat' && piketLama)
+        throw new Error(`${namaGuru(n.guru_id)} masih tercatat tugas Piket (${piketLama.jam_piket ?? '—'} jam). `
+                      + `Sebagai ${n.jenis}, piketnya melekat — hapus atau akhiri tugas Piket itu dulu, lalu isi jam piketnya di sini.`);
       const isi = {
         guru_id: n.guru_id, tahun_ajaran: sesi.ta, jenis: n.jenis,
         rombel_id: sifat(n.jenis, 'perlu_rombel')
@@ -1323,12 +1335,18 @@ function halPiketMatriks() {
         const w = warnaDasar(p.dasar);
         const sambungKiri = kiri && !kiri.sela && ada(g, kiri.jk);
         const sambungKanan = kanan && !kanan.sela && ada(g, kanan.jk);
+        // Jam berturut-turut tampil sebagai satu pita panjang; supaya tidak
+        // terbaca sebagai satu jam, pita yang melintasi beberapa kolom
+        // menyebut panjangnya di samping nama.
+        let panjang = 1;
+        if (!sambungKiri) for (let k = ci + 1; k < kolom.length && !kolom[k].sela && ada(g, kolom[k].jk); k++) panjang++;
         return `<div class="pk-pita${sambungKiri ? ' kiri' : ''}${sambungKanan ? ' kanan' : ''}${p.staf ? ' staf' : ''}"
           draggable="true" data-id="${esc(p.id)}"
           style="--bg:${w[0]};--aksen:${w[1]}"
           title="${esc(p.guru + '\n' + h + ' jam ke-' + c.jk + (jamTeks(c.jk) ? ' (' + jamTeks(c.jk) + ')' : '')
                  + '\nDasar: ' + p.dasar + (p.staf ? ' · tanpa transport' : '')
-                 + '\nSeret untuk memindahkan')}">${esc(namaPendek(p.guru))}</div>`;
+                 + '\nSeret untuk memindahkan')}">${esc(namaPendek(p.guru))}${
+                 panjang > 1 ? `<small>${panjang} jam</small>` : ''}</div>`;
       }).join('');
       return `<td class="mx-sel pk-sel${skr}${n ? '' : ' pk-nol'}" data-hari="${h}" data-jam="${c.jk}"
         title="${esc(h + ' jam ke-' + c.jk + ' · ' + (n ? n + ' petugas' : 'belum ada petugas') + ' — klik untuk mengatur')}">

@@ -239,6 +239,7 @@ table.mx td.pk-sel:hover{background:var(--emas-muda)}
 .pk-pita.kiri{margin-left:-3px;border-left:none;border-top-left-radius:0;border-bottom-left-radius:0;color:transparent;
   box-shadow:inset 1px 0 0 rgba(255,255,255,.8)}
 .pk-pita.kanan:not(.kiri){overflow:visible;text-overflow:clip;position:relative;z-index:1}
+.pk-pita small{font-weight:400;font-size:10px;color:var(--ink2);margin-left:5px}
 .pk-tambah{display:none;position:absolute;right:4px;bottom:3px;width:18px;height:18px;border-radius:50%;
   background:var(--primary);color:#fff;font-size:13px;line-height:18px;text-align:center}
 td.pk-sel:hover .pk-tambah{display:block}
