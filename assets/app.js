@@ -3071,8 +3071,8 @@ function halPiketParkiran() {
       }).join('')}</tbody></table></div></div>
 
     <p class="kecil">Kompensasinya dihitung per hari petugas benar-benar hadir, bukan per hari terjadwal.
-      Besar tarifnya diatur di <b>Kehadiran Guru → Rekap → Pengaturan</b>, dan rekapnya ada di tab Piket
-      pada halaman yang sama. Bila petugas berhalangan, penggantinya dicatat saat mengisi pelaksanaan —
+      Besar nominalnya diatur di <b>Induk Pembiayaan → Penggajian</b>, dan rekap pelaksanaannya ada di tab Piket
+      pada Kehadiran Guru → Rekapitulasi Kehadiran. Bila petugas berhalangan, gilirannya tidak dijaga —
       jadwal di sini tidak perlu diubah.</p>`;
 
   pasangTabPiket();
