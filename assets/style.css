@@ -29,7 +29,11 @@ h1,h2,h3{margin:0}
 /* ---- Kerangka ---- */
 .app{display:flex;min-height:100vh}
 .sidebar{width:212px;flex:none;background:var(--gelap);color:var(--tinta-terang-2);padding:20px 0;display:flex;flex-direction:column}
-.sidebar .brand{padding:0 20px 16px;border-bottom:1px solid var(--gelap-2)}
+/* Lambang sekolah di bilah samping, seperti di Kehadiran Guru dan Absensi
+   Ekskul — supaya kelima aplikasi dikenali sebagai satu keluarga. */
+.sidebar .brand{padding:0 20px 16px;border-bottom:1px solid var(--gelap-2);display:flex;align-items:center;gap:12px}
+.sidebar .brand img{width:40px;height:40px;object-fit:contain;flex:none}
+.sidebar .brand>div{min-width:0}
 .sidebar .brand b{display:block;color:#fff;font-size:14px;font-weight:600;line-height:1.3}
 .sidebar .brand span{font-size:11.5px}
 .sidebar nav{padding:12px 12px;display:flex;flex-direction:column;gap:2px;flex:1}
