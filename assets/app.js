@@ -99,6 +99,7 @@ const tingkatDari = kode => {
 async function api(jalur, opsi = {}) {
   const r = await fetch(KONFIG.url + jalur, {
     ...opsi,
+    cache: 'no-store',   // data selalu segar dari server, tidak pernah dari cache peramban
     headers: {
       apikey: KONFIG.anonKey,
       Authorization: 'Bearer ' + (sesi.token || KONFIG.anonKey),
@@ -886,7 +887,8 @@ function halGuru() {
       <div class="sp"></div>
       <button class="btn btn-p" id="bTambah">+ Tambah guru</button>
       <button class="btn" id="bUnggah">Unggah berkas</button>
-      <button class="btn" id="bUnduh">Unduh Data (xlsx)</button></div>
+      <button class="btn" id="bUnduh">Unduh Data (xlsx)</button>
+      <button class="btn" id="bUlang" title="Baca ulang data guru dan kelayakan tunjangan dari server">Muat ulang</button></div>
     ${Object.entries(BPJS).map(([jenis, J]) => {
       const layak = layakJenis(jenis);
       return layak.length ? `<div class="info-box"><b>${layak.length} ${jenis === 'kesehatan' ? 'guru' : 'staf'} memenuhi syarat ${J.nama} (${J.panjang}) dan belum disahkan:</b>
@@ -925,6 +927,13 @@ function halGuru() {
   $('#q').oninput = e => { clearTimeout(window._qg); window._qg = setTimeout(() => { ui.qGuru = e.target.value; gambar(); }, 200); };
   $('#fStatus').onchange = e => { ui.statusGuru = e.target.value; gambar(); };
   $('#bTambah').onclick = () => formGuru(null);
+  // Pengesahan bisa dilakukan di peramban lain (kepala sekolah); tombol ini
+  // menyegarkan tanpa memuat ulang seluruh halaman.
+  $('#bUlang').onclick = () => jalankan('Memuat ulang…', async () => {
+    if (MODE !== 'contoh') D.guru = await ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc') || D.guru;
+    await muatBpjs();
+    toast('Data guru dan tanda tunjangan dibaca ulang');
+  });
   $('#bUnggah').onclick = () => pilihBerkas(m => imporGuru(m));
   $('#bUnduh').onclick = () => unduhTabel('Daftar Guru', kolomGuru(), D.guru,
     `Tahun Pelajaran ${sesi.ta}  ·  ${D.guru.filter(g => g.status_aktif === 'Aktif').length} guru aktif`);
@@ -963,6 +972,18 @@ async function muatBpjs() {
   if (MODE === 'contoh') { D.bpjs = D.bpjs || []; return; }
   try { D.bpjs = await ambil('v_guru_bpjs', 'select=*'); }
   catch (e) { D.bpjs = []; console.warn('v_guru_bpjs belum ada:', e.message); }
+}
+
+// Sesudah menyimpan pengesahan: baca ulang sampai status guru itu benar-benar
+// berubah (paling banyak tiga kali, jeda pendek), supaya tanda di daftar
+// tidak tertinggal satu langkah bila jawaban server sempat terlambat.
+async function muatBpjsSampai(id, jenis, statusDiharapkan) {
+  for (let i = 0; i < 3; i++) {
+    await muatBpjs();
+    const b = bpjsGuru(id, jenis);
+    if (b && b.status === statusDiharapkan) return;
+    await new Promise(r => setTimeout(r, 700));
+  }
 }
 
 // Tanda di daftar guru, satu per jenis yang relevan; kosong bila belum apa-apa.
@@ -1009,7 +1030,7 @@ function dialogBpjs(id, jenis) {
           Object.assign(b, { status: 'disahkan', mulai, disahkan_oleh: sesi.petugas || 'Mode contoh' });
         } else {
           await simpanBaru('guru_bpjs', { guru_id: id, jenis, mulai, catatan: n.catatan ? String(n.catatan).trim() : null });
-          await muatBpjs();
+          await muatBpjsSampai(id, jenis, 'disahkan');
         }
         toast(`${J.nama} disahkan`);
       }
@@ -1030,7 +1051,7 @@ function dialogBpjs(id, jenis) {
       } else {
         await perbarui('guru_bpjs', `id=eq.${b.pengesahan_id}`,
           { dicabut_pada: new Date().toISOString().slice(0, 10), dicabut_oleh: sesi.petugas || null });
-        await muatBpjs();
+        await muatBpjsSampai(id, jenis, b.memenuhi ? 'memenuhi' : 'belum');
       }
       toast(`Pengesahan ${J.nama} dicabut`);
     }
