@@ -31,7 +31,7 @@ const MODE = (KONFIG.url && KONFIG.anonKey) ? 'db' : 'contoh';
 /* Kolom tabel guru yang sebenarnya di database sekolah. */
 const KOLOM_GURU = 'id,nig,nama,nip,nuptk,jenis_kelamin,jenis_ptk,status_aktif,'
   + 'tmt_sekolah,tmt_guru,tmt_status,pendidikan_terakhir,jurusan,linier,'
-  + 'no_sertifikat_pendidik,mapel_utama,no_hp,email,catatan,insentif_fingerprint';
+  + 'no_sertifikat_pendidik,mapel_utama,no_hp,email,catatan,insentif_fingerprint,tmt_staf';
 const PTK = ['Guru Tetap Yayasan','Guru Tidak Tetap','Tenaga Kependidikan','Pimpinan'];
 const STATUS_SISWA = ['aktif', 'pindah', 'keluar', 'lulus'];
 const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
@@ -878,7 +878,7 @@ function halGuru() {
   const tugasGuru = id => D.tugas.filter(t => t.guru_id === id && t.aktif);
   // Kepala sekolah diberi tahu lewat kotak di atas daftar dan tanda pada barisnya;
   // pengesahannya tetap ditekan sendiri, tidak otomatis.
-  const layak = (D.bpjs || []).filter(b => b.status === 'memenuhi');
+  const layakJenis = jenis => (D.bpjs || []).filter(b => b.jenis === jenis && b.status === 'memenuhi');
   const terhenti = (D.bpjs || []).filter(b => b.status === 'terhenti');
 
   $('#isi').innerHTML = `
@@ -887,13 +887,15 @@ function halGuru() {
       <button class="btn btn-p" id="bTambah">+ Tambah guru</button>
       <button class="btn" id="bUnggah">Unggah berkas</button>
       <button class="btn" id="bUnduh">Unduh Data (xlsx)</button></div>
-    ${layak.length ? `<div class="info-box"><b>${layak.length} guru memenuhi syarat tunjangan BPJS Kesehatan dan belum disahkan:</b>
-      ${layak.map(b => esc(b.nama)).join(', ')}. Masa kerja di sekolah ini sudah lima tahun dan bukan Guru
-      Tidak Tetap (Dapodik menginduk di sini). Kepala sekolah mengesahkan lewat tombol <b>BPJS</b> pada baris
-      gurunya; tunjangan mulai bulan berikutnya sesudah genap lima tahun.</div>` : ''}
+    ${Object.entries(BPJS).map(([jenis, J]) => {
+      const layak = layakJenis(jenis);
+      return layak.length ? `<div class="info-box"><b>${layak.length} ${jenis === 'kesehatan' ? 'guru' : 'staf'} memenuhi syarat tunjangan ${J.nama} dan belum disahkan:</b>
+        ${layak.map(b => esc(b.nama)).join(', ')}. Syaratnya: ${J.syarat}. Kepala sekolah mengesahkan lewat tombol
+        <b>${J.singkat}</b> pada baris gurunya; tunjangan mulai bulan berikutnya sesudah ${J.genap}.</div>` : '';
+    }).join('')}
     ${terhenti.length ? `<div class="info-box"><b>${terhenti.length} pengesahan BPJS terhenti:</b>
-      ${terhenti.map(b => `${esc(b.nama)} (${esc(b.keterangan || '')})`).join(', ')}. Pembayarannya sudah berhenti
-      sendiri di Induk Pembiayaan; pengesahannya bisa dibiarkan sebagai riwayat atau dicabut lewat tombol <b>BPJS</b>.</div>` : ''}
+      ${terhenti.map(b => `${esc(b.nama)} — ${BPJS[b.jenis].singkat} (${esc(b.keterangan || '')})`).join(', ')}. Pembayarannya sudah berhenti
+      sendiri di Induk Pembiayaan; pengesahannya bisa dibiarkan sebagai riwayat atau dicabut lewat tombol pada barisnya.</div>` : ''}
     <div class="bar">
       <div class="grow"><input class="field" id="q" placeholder="Cari nama, NIG, atau mapel…" value="${esc(ui.qGuru)}"></div>
       <select class="field" id="fStatus" style="width:auto">
@@ -905,7 +907,7 @@ function halGuru() {
         <th style="width:130px" class="hide-sm">Mapel utama</th>
         <th style="width:130px" class="hide-sm">Jenis PTK</th>
         <th style="width:100px" class="hide-sm">TMT</th>
-        <th>Tugas melekat</th><th style="width:190px"></th>
+        <th>Tugas melekat</th><th style="width:250px"></th>
       </tr></thead><tbody>${
         data.length ? data.map(g => `<tr class="${g.status_aktif !== 'Aktif' ? 'mati' : ''}" data-id="${esc(g.id)}">
           <td class="num">${esc(g.nig || g.id)}</td>
@@ -916,9 +918,7 @@ function halGuru() {
           <td class="hide-sm">${tglIndo(g.tmt_sekolah)}</td>
           <td>${tugasGuru(g.id).map(t => `<span class="tag tag-l">${esc(t.jenis)}${t.jabatan ? ' · ' + esc(t.jabatan) : (t.rombel_id ? ' · ' + esc(kodeRombel(t.rombel_id)) : '')}</span>`).join(' ') || '<span class="kecil">—</span>'}</td>
           <td class="act"><button class="btn btn-sm bUbah">Ubah</button>
-            <button class="btn btn-sm bTugas">Tugas</button>${
-            (bpjsGuru(g.id) || {}).status && bpjsGuru(g.id).status !== 'belum'
-              ? '<button class="btn btn-sm bBpjs">BPJS</button>' : ''}</td></tr>`).join('')
+            <button class="btn btn-sm bTugas">Tugas</button>${tombolBpjs(g.id)}</td></tr>`).join('')
         : `<tr><td colspan="7"><div class="empty"><b>Tidak ada guru yang cocok</b>Ubah pencarian atau saringan.</div></td></tr>`
       }</tbody></table></div></div>`;
 
@@ -931,21 +931,33 @@ function halGuru() {
   $('tbody').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
     if (e.target.classList.contains('bUbah')) formGuru(tr.dataset.id);
-    else if (e.target.classList.contains('bBpjs')) dialogBpjs(tr.dataset.id);
+    else if (e.target.classList.contains('bBpjs')) dialogBpjs(tr.dataset.id, e.target.dataset.jenis);
     else if (e.target.classList.contains('bTugas')) { halaman = 'tugas'; ui.guruTugas = tr.dataset.id; $$('#nav button').forEach(x => x.classList.toggle('on', x.dataset.hal === 'tugas')); gambar(); }
   };
 }
 
 /* ------------------------------------------------- tunjangan BPJS */
-/* Kelayakannya dihitung database (v_guru_bpjs): aktif, bukan Guru Tidak
-   Tetap (Dapodik menginduk di sekolah ini), dan TMT sekolah sudah lima
-   tahun. Di sini hanya ditampilkan dan disahkan.
+/* Dua tunjangan, satu pola. Kelayakannya dihitung database (v_guru_bpjs,
+   satu baris per guru per jenis):
+     kesehatan       — aktif, bukan Guru Tidak Tetap (Dapodik menginduk di
+                       sekolah ini), TMT sekolah sudah lima tahun;
+     ketenagakerjaan — aktif, memegang tugas Staf, TMT sebagai staf sudah
+                       tiga tahun.
+   Di sini hanya ditampilkan dan disahkan.
    status: belum · memenuhi (belum disahkan) · disahkan · terhenti (disahkan,
    tetapi kelayakannya gugur — pembayaran berhenti sendiri).                */
+const BPJS = {
+  kesehatan:       { singkat: 'BPJS Kes', nama: 'BPJS Kesehatan',
+                     syarat: 'masa kerja di sekolah ini sudah lima tahun dan bukan Guru Tidak Tetap (Dapodik menginduk di sini)',
+                     gugur: 'guru nonaktif atau berubah menjadi Guru Tidak Tetap', tmt: 'TMT sekolah', genap: 'genap lima tahun' },
+  ketenagakerjaan: { singkat: 'BPJS TK', nama: 'BPJS Ketenagakerjaan',
+                     syarat: 'memegang tugas Staf dan sudah tiga tahun menjadi staf (TMT sebagai staf)',
+                     gugur: 'guru nonaktif atau tidak lagi memegang tugas Staf', tmt: 'TMT staf', genap: 'genap tiga tahun' }
+};
 const bulanIndo = iso => /^\d{4}-\d{2}/.test(iso || '')
   ? ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][Number(iso.slice(5, 7)) - 1] + ' ' + iso.slice(0, 4)
   : '—';
-const bpjsGuru = id => (D.bpjs || []).find(b => b.id === id);
+const bpjsGuru = (id, jenis) => (D.bpjs || []).find(b => b.id === id && b.jenis === jenis);
 
 async function muatBpjs() {
   if (MODE === 'contoh') { D.bpjs = D.bpjs || []; return; }
@@ -953,30 +965,42 @@ async function muatBpjs() {
   catch (e) { D.bpjs = []; console.warn('v_guru_bpjs belum ada:', e.message); }
 }
 
+// Tanda di daftar guru, satu per jenis yang relevan; kosong bila belum apa-apa.
 function tagBpjs(id) {
-  const b = bpjsGuru(id);
-  if (!b || b.status === 'belum') return '';
-  if (b.status === 'memenuhi')
-    return ` <span class="tag tag-w" title="Memenuhi syarat sejak ${tglIndo(b.genap_lima_tahun)}, belum disahkan">BPJS: memenuhi syarat</span>`;
-  if (b.status === 'disahkan')
-    return ` <span class="tag tag-ok" title="Disahkan${b.disahkan_oleh ? ' oleh ' + esc(b.disahkan_oleh) : ''}">BPJS sejak ${bulanIndo(b.mulai)}</span>`;
-  return ` <span class="tag tag-x" title="${esc(b.keterangan || '')}">BPJS terhenti</span>`;
+  return Object.entries(BPJS).map(([jenis, J]) => {
+    const b = bpjsGuru(id, jenis);
+    if (!b || b.status === 'belum') return '';
+    if (b.status === 'memenuhi')
+      return ` <span class="tag tag-w" title="Memenuhi syarat sejak ${tglIndo(b.tanggal_syarat)}, belum disahkan">${J.singkat}: memenuhi syarat</span>`;
+    if (b.status === 'disahkan')
+      return ` <span class="tag tag-ok" title="Disahkan${b.disahkan_oleh ? ' oleh ' + esc(b.disahkan_oleh) : ''}">${J.singkat} sejak ${bulanIndo(b.mulai)}</span>`;
+    return ` <span class="tag tag-x" title="${esc(b.keterangan || '')}">${J.singkat} terhenti</span>`;
+  }).join('');
 }
 
-function dialogBpjs(id) {
-  const b = bpjsGuru(id); if (!b) return;
+function tombolBpjs(id) {
+  return Object.entries(BPJS).map(([jenis, J]) => {
+    const b = bpjsGuru(id, jenis);
+    return b && b.status !== 'belum'
+      ? ` <button class="btn btn-sm bBpjs" data-jenis="${jenis}">${J.singkat}</button>` : '';
+  }).join('');
+}
+
+function dialogBpjs(id, jenis) {
+  const J = BPJS[jenis]; if (!J) return;
+  const b = bpjsGuru(id, jenis); if (!b) return;
   const g = D.guru.find(x => x.id === id) || {};
   if (b.status === 'memenuhi') {
     formulir({
-      judul: 'Sahkan tunjangan BPJS Kesehatan',
+      judul: `Sahkan tunjangan ${J.nama}`,
       catatan: 'Pengesahan kepala sekolah. Nama petugas yang sedang masuk dicatat sebagai pengesah. '
-             + 'Tunjangan berhenti sendiri bila guru nonaktif atau berubah menjadi Guru Tidak Tetap.',
+             + `Tunjangan berhenti sendiri bila ${J.gugur}.`,
       nilai: { mulai: b.mulai_layak },
       kolom: [
         { k: 'guru', label: 'Guru', tipe: 'info',
-          hint: `${g.nama} · TMT ${tglIndo(g.tmt_sekolah)} · genap lima tahun ${tglIndo(b.genap_lima_tahun)}` },
+          hint: `${g.nama} · ${J.tmt} ${tglIndo(b.tmt_dasar)} · ${J.genap} ${tglIndo(b.tanggal_syarat)}` },
         { k: 'mulai', label: 'Bulan pertama tunjangan', tipe: 'tanggal', wajib: true,
-          hint: 'Bawaan: bulan berikutnya sesudah genap lima tahun. Tanggalnya dibulatkan ke tanggal 1.' },
+          hint: `Bawaan: bulan berikutnya sesudah ${J.genap}. Tanggalnya dibulatkan ke tanggal 1.` },
         { k: 'catatan', label: 'Catatan', tipe: 'panjang' }
       ],
       simpan: async n => {
@@ -984,16 +1008,16 @@ function dialogBpjs(id) {
         if (MODE === 'contoh') {
           Object.assign(b, { status: 'disahkan', mulai, disahkan_oleh: sesi.petugas || 'Mode contoh' });
         } else {
-          await simpanBaru('guru_bpjs', { guru_id: id, mulai, catatan: n.catatan ? String(n.catatan).trim() : null });
+          await simpanBaru('guru_bpjs', { guru_id: id, jenis, mulai, catatan: n.catatan ? String(n.catatan).trim() : null });
           await muatBpjs();
         }
-        toast('Tunjangan BPJS disahkan');
+        toast(`Tunjangan ${J.nama} disahkan`);
       }
     });
     return;
   }
   konfirmasi({
-    judul: b.status === 'disahkan' ? 'Cabut pengesahan BPJS' : 'Pengesahan BPJS terhenti',
+    judul: b.status === 'disahkan' ? `Cabut pengesahan ${J.nama}` : `Pengesahan ${J.nama} terhenti`,
     tombol: 'Cabut pengesahan',
     pesan: `<b>${esc(g.nama)}</b> — disahkan${b.disahkan_oleh ? ' oleh ' + esc(b.disahkan_oleh) : ''}${
         b.disahkan_pada ? ' pada ' + tglIndo(String(b.disahkan_pada).slice(0, 10)) : ''}, tunjangan sejak ${bulanIndo(b.mulai)}. `
@@ -1008,7 +1032,7 @@ function dialogBpjs(id) {
           { dicabut_pada: new Date().toISOString().slice(0, 10), dicabut_oleh: sesi.petugas || null });
         await muatBpjs();
       }
-      toast('Pengesahan BPJS dicabut');
+      toast(`Pengesahan ${J.nama} dicabut`);
     }
   });
 }
@@ -1047,6 +1071,9 @@ function formGuru(id) {
         hint: 'Dipakai untuk perhitungan masa kerja' },
       { k: 'tmt_guru', label: 'TMT sebagai guru', tipe: 'tanggal' },
       { k: 'tmt_status', label: 'TMT status kepegawaian', tipe: 'tanggal' },
+      { k: 'tmt_staf', label: 'TMT sebagai staf', tipe: 'tanggal',
+        hint: 'Sejak kapan memegang tugas Staf. Dasar masa kerja tiga tahun untuk tunjangan BPJS Ketenagakerjaan; '
+            + 'kosongkan bila bukan staf.' },
 
       { k: 'pendidikan_terakhir', label: 'Pendidikan terakhir', tipe: 'pilih',
         opsi: ['', 'D3', 'S1', 'S2', 'S3'].map(v => ({ v, t: v || '— belum diisi —' })) },
@@ -1072,7 +1099,7 @@ function formGuru(id) {
         jenis_kelamin: bersih(n.jenis_kelamin),
         jenis_ptk: n.jenis_ptk, status_aktif: n.status_aktif || 'Aktif',
         tmt_sekolah: bersih(n.tmt_sekolah), tmt_guru: bersih(n.tmt_guru),
-        tmt_status: bersih(n.tmt_status),
+        tmt_status: bersih(n.tmt_status), tmt_staf: bersih(n.tmt_staf),
         pendidikan_terakhir: bersih(n.pendidikan_terakhir), jurusan: bersih(n.jurusan),
         linier: n.linier === 'ya' ? true : n.linier === 'tidak' ? false : null,
         no_sertifikat_pendidik: bersih(n.no_sertifikat_pendidik),
@@ -1093,7 +1120,7 @@ function formGuru(id) {
         D.guru.push(d[0]);
       }
       D.guru.sort(urutGuru);
-      // TMT, status, dan jenis PTK mengubah kelayakan BPJS — baca ulang.
+      // TMT sekolah, TMT staf, status, dan jenis PTK mengubah kelayakan BPJS — baca ulang.
       await muatBpjs();
       toast(id ? 'Data guru diperbarui' : 'Guru ditambahkan');
     }
