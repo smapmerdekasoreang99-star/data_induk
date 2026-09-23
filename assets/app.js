@@ -31,7 +31,7 @@ const MODE = (KONFIG.url && KONFIG.anonKey) ? 'db' : 'contoh';
 /* Kolom tabel guru yang sebenarnya di database sekolah. */
 const KOLOM_GURU = 'id,nig,nama,nip,nuptk,jenis_kelamin,jenis_ptk,status_aktif,'
   + 'tmt_sekolah,tmt_guru,tmt_status,pendidikan_terakhir,jurusan,linier,'
-  + 'no_sertifikat_pendidik,mapel_utama,no_hp,email,catatan,insentif_fingerprint,induk_dapodik';
+  + 'no_sertifikat_pendidik,mapel_utama,no_hp,email,catatan,insentif_fingerprint';
 const PTK = ['Guru Tetap Yayasan','Guru Tidak Tetap','Tenaga Kependidikan','Pimpinan'];
 const STATUS_SISWA = ['aktif', 'pindah', 'keluar', 'lulus'];
 const STATUS_GURU  = ['Aktif', 'Cuti', 'Nonaktif'];
@@ -888,9 +888,9 @@ function halGuru() {
       <button class="btn" id="bUnggah">Unggah berkas</button>
       <button class="btn" id="bUnduh">Unduh Data (xlsx)</button></div>
     ${layak.length ? `<div class="info-box"><b>${layak.length} guru memenuhi syarat tunjangan BPJS Kesehatan dan belum disahkan:</b>
-      ${layak.map(b => esc(b.nama)).join(', ')}. Masa kerja di sekolah ini sudah lima tahun dan menginduk di
-      Dapodik. Kepala sekolah mengesahkan lewat tombol <b>BPJS</b> pada baris gurunya; tunjangan mulai bulan
-      berikutnya sesudah genap lima tahun.</div>` : ''}
+      ${layak.map(b => esc(b.nama)).join(', ')}. Masa kerja di sekolah ini sudah lima tahun dan bukan Guru
+      Tidak Tetap (Dapodik menginduk di sini). Kepala sekolah mengesahkan lewat tombol <b>BPJS</b> pada baris
+      gurunya; tunjangan mulai bulan berikutnya sesudah genap lima tahun.</div>` : ''}
     ${terhenti.length ? `<div class="info-box"><b>${terhenti.length} pengesahan BPJS terhenti:</b>
       ${terhenti.map(b => `${esc(b.nama)} (${esc(b.keterangan || '')})`).join(', ')}. Pembayarannya sudah berhenti
       sendiri di Induk Pembiayaan; pengesahannya bisa dibiarkan sebagai riwayat atau dicabut lewat tombol <b>BPJS</b>.</div>` : ''}
@@ -937,8 +937,9 @@ function halGuru() {
 }
 
 /* ------------------------------------------------- tunjangan BPJS */
-/* Kelayakannya dihitung database (v_guru_bpjs): aktif, menginduk di Dapodik,
-   dan TMT sekolah sudah lima tahun. Di sini hanya ditampilkan dan disahkan.
+/* Kelayakannya dihitung database (v_guru_bpjs): aktif, bukan Guru Tidak
+   Tetap (Dapodik menginduk di sekolah ini), dan TMT sekolah sudah lima
+   tahun. Di sini hanya ditampilkan dan disahkan.
    status: belum · memenuhi (belum disahkan) · disahkan · terhenti (disahkan,
    tetapi kelayakannya gugur — pembayaran berhenti sendiri).                */
 const bulanIndo = iso => /^\d{4}-\d{2}/.test(iso || '')
@@ -969,7 +970,7 @@ function dialogBpjs(id) {
     formulir({
       judul: 'Sahkan tunjangan BPJS Kesehatan',
       catatan: 'Pengesahan kepala sekolah. Nama petugas yang sedang masuk dicatat sebagai pengesah. '
-             + 'Tunjangan berhenti sendiri bila guru nonaktif atau tidak lagi menginduk di Dapodik.',
+             + 'Tunjangan berhenti sendiri bila guru nonaktif atau berubah menjadi Guru Tidak Tetap.',
       nilai: { mulai: b.mulai_layak },
       kolom: [
         { k: 'guru', label: 'Guru', tipe: 'info',
@@ -1022,8 +1023,7 @@ function formGuru(id) {
   formulir({
     judul: id ? 'Ubah data guru' : 'Tambah guru',
     nilai: { ...g, linier: g.linier === true ? 'ya' : g.linier === false ? 'tidak' : '',
-             insentif_fingerprint: g.insentif_fingerprint ? 'ya' : 'tidak',
-             induk_dapodik: g.induk_dapodik ? 'ya' : 'tidak' },
+             insentif_fingerprint: g.insentif_fingerprint ? 'ya' : 'tidak' },
     lebar: true,
     catatan: id ? 'NIG dan ID tidak dapat diubah karena sudah dirujuk jadwal KBM dan data lain.' : '',
     kolom: [
@@ -1033,7 +1033,9 @@ function formGuru(id) {
       { k: 'jenis_kelamin', label: 'Jenis kelamin', tipe: 'pilih',
         opsi: [{ v: '', t: '— belum diisi —' }, { v: 'L', t: 'Laki-laki' }, { v: 'P', t: 'Perempuan' }] },
       { k: 'jenis_ptk', label: 'Jenis PTK', tipe: 'pilih', wajib: true,
-        opsi: PTK.map(v => ({ v, t: v })) },
+        opsi: PTK.map(v => ({ v, t: v })),
+        hint: 'Guru Tidak Tetap = Dapodiknya tidak menginduk di sekolah ini, jadi tidak berhak tunjangan BPJS Kesehatan. '
+            + 'Tiga jenis lainnya dianggap menginduk.' },
       { k: 'status_aktif', label: 'Status', tipe: 'pilih', wajib: true,
         opsi: STATUS_GURU.map(v => ({ v, t: v })),
         hint: 'Guru nonaktif tetap terbaca pada data lama, tetapi tidak muncul di daftar pilihan.' },
@@ -1058,11 +1060,6 @@ function formGuru(id) {
       { k: 'insentif_fingerprint', label: 'Insentif TM & Konsumsi lewat fingerprint', tipe: 'pilih',
         opsi: [{ v: 'tidak', t: 'Tidak — dihitung dari rekap kehadiran' }, { v: 'ya', t: 'Ya — dibayar akhir bulan dari fingerprint' }],
         hint: 'Sesuai kontrak kerja. Honor Mengajar & Transport Berdiri tetap dihitung (berbeda dengan Staf).' },
-      { k: 'induk_dapodik', label: 'Menginduk di Dapodik sekolah ini', tipe: 'pilih',
-        opsi: [{ v: 'tidak', t: 'Tidak' }, { v: 'ya', t: 'Ya — menginduk di sini' }],
-        hint: 'Salah satu syarat tunjangan BPJS Kesehatan, bersama masa kerja lima tahun (dari TMT di sekolah ini). '
-            + 'Bila diubah menjadi Tidak, tunjangan yang sudah disahkan berhenti sendiri.' },
-
       { k: 'no_hp', label: 'Nomor HP' },
       { k: 'email', label: 'Email' },
       { k: 'catatan', label: 'Catatan', tipe: 'panjang' }
@@ -1081,7 +1078,6 @@ function formGuru(id) {
         no_sertifikat_pendidik: bersih(n.no_sertifikat_pendidik),
         mapel_utama: bersih(n.mapel_utama),
         insentif_fingerprint: n.insentif_fingerprint === 'ya',
-        induk_dapodik: n.induk_dapodik === 'ya',
         no_hp: bersih(n.no_hp), email: bersih(n.email), catatan: bersih(n.catatan)
       };
       if (MODE === 'contoh') {
@@ -1097,7 +1093,7 @@ function formGuru(id) {
         D.guru.push(d[0]);
       }
       D.guru.sort(urutGuru);
-      // TMT, status, dan penanda Dapodik mengubah kelayakan BPJS — baca ulang.
+      // TMT, status, dan jenis PTK mengubah kelayakan BPJS — baca ulang.
       await muatBpjs();
       toast(id ? 'Data guru diperbarui' : 'Guru ditambahkan');
     }

@@ -75,7 +75,7 @@ Unggah seluruh isi folder ini ke repo GitHub, aktifkan GitHub Pages.
 |---|---|
 | Beranda | ringkasan jumlah, kelengkapan data, unduh cadangan |
 | Data Siswa | 684 siswa; tambah, ubah, pindah kelas massal, unggah CSV/Excel |
-| Data Guru | 39 guru dengan 20 isian; tugas melekat tampil di tiap baris. Tanda kelayakan tunjangan BPJS Kesehatan (masa kerja 5 tahun + menginduk di Dapodik) dan tombol pengesahan kepala sekolah |
+| Data Guru | 39 guru dengan 19 isian; tugas melekat tampil di tiap baris. Tanda kelayakan tunjangan BPJS Kesehatan (masa kerja 5 tahun, bukan Guru Tidak Tetap) dan tombol pengesahan kepala sekolah |
 | Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul; jam piket meja sekolah dan jam piket unit yang disepakati dicatat di sini. Tugas Staf juga menyimpan pola honor (bulanan, bulanan + insentif kedatangan, upah harian) dan sumber hari hadirnya (fingerprint / absen manual) |
 | Jadwal KBM | matriks hari × jam, per kelas atau per guru |
 | Kelompok Belajar | Tahsin dan Matematika Dasar beserta anggotanya |
@@ -136,7 +136,7 @@ dan unit, **Kesiswaan** untuk parkiran.
 - Satu siswa satu kelompok untuk tiap mata pelajaran
 - Siswa yang dikecualikan tidak bisa dimasukkan ke kelompoknya, dan sebaliknya
 - Memegang tugas Staf menggugurkan seluruh perhitungan honor tambahan
-- Kelayakan tunjangan BPJS Kesehatan dihitung (aktif, menginduk di Dapodik, TMT sekolah sudah 5 tahun), bukan diketik; yang diketik hanya pengesahan kepala sekolah, dan pembayaran berhenti sendiri begitu syaratnya gugur
+- Kelayakan tunjangan BPJS Kesehatan dihitung (aktif, bukan Guru Tidak Tetap karena Dapodiknya tidak menginduk di sini, TMT sekolah sudah 5 tahun), bukan diketik; yang diketik hanya pengesahan kepala sekolah, dan pembayaran berhenti sendiri begitu syaratnya gugur
 
 ### Istilah yang mudah tertukar
 
