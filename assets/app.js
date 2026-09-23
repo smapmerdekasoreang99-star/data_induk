@@ -950,8 +950,9 @@ function halGuru() {
    satu baris per guru per jenis):
      kesehatan       — aktif, bukan Guru Tidak Tetap (Dapodik menginduk di
                        sekolah ini), TMT sekolah sudah lima tahun;
-     ketenagakerjaan — aktif, memegang tugas Staf, TMT sebagai staf sudah
-                       tiga tahun.
+     ketenagakerjaan — aktif, memegang tugas Staf, masa kerja lima tahun
+                       (dari TMT sekolah; Guru Tetap Yayasan yang merangkap
+                       staf: dari TMT sebagai staf).
    Di sini hanya ditampilkan dan disahkan.
    status: belum · memenuhi (belum disahkan) · disahkan · terhenti (disahkan,
    tetapi kelayakannya gugur — pembayaran berhenti sendiri).                */
@@ -960,8 +961,8 @@ const BPJS = {
                      syarat: 'masa kerja di sekolah ini sudah lima tahun dan bukan Guru Tidak Tetap (Dapodik menginduk di sini)',
                      gugur: 'guru nonaktif atau berubah menjadi Guru Tidak Tetap', tmt: 'TMT sekolah', genap: 'genap lima tahun' },
   ketenagakerjaan: { singkat: 'TuKerja', nama: 'TuKerja', panjang: 'Tunjangan Ketenagakerjaan',
-                     syarat: 'memegang tugas Staf dan sudah tiga tahun menjadi staf (TMT sebagai staf)',
-                     gugur: 'guru nonaktif atau tidak lagi memegang tugas Staf', tmt: 'TMT staf', genap: 'genap tiga tahun' }
+                     syarat: 'memegang tugas Staf dan masa kerjanya sudah lima tahun (dari TMT di sekolah; bagi Guru Tetap Yayasan yang merangkap staf, dari TMT sebagai staf)',
+                     gugur: 'guru nonaktif atau tidak lagi memegang tugas Staf', tmt: 'TMT dasar', genap: 'genap lima tahun' }
 };
 const bulanIndo = iso => /^\d{4}-\d{2}/.test(iso || '')
   ? ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][Number(iso.slice(5, 7)) - 1] + ' ' + iso.slice(0, 4)
@@ -1093,8 +1094,9 @@ function formGuru(id) {
       { k: 'tmt_guru', label: 'TMT sebagai guru', tipe: 'tanggal' },
       { k: 'tmt_status', label: 'TMT status kepegawaian', tipe: 'tanggal' },
       { k: 'tmt_staf', label: 'TMT sebagai staf', tipe: 'tanggal',
-        hint: 'Sejak kapan memegang tugas Staf. Dasar masa kerja tiga tahun untuk TuKerja (Tunjangan Ketenagakerjaan); '
-            + 'kosongkan bila bukan staf.' },
+        hint: 'Hanya untuk Guru Tetap Yayasan yang merangkap staf: sejak kapan memegang tugas Staf. Dasar masa kerja '
+            + 'lima tahun untuk TuKerja (Tunjangan Ketenagakerjaan). Staf lain dihitung dari TMT di sekolah ini, '
+            + 'jadi isian ini dikosongkan.' },
 
       { k: 'pendidikan_terakhir', label: 'Pendidikan terakhir', tipe: 'pilih',
         opsi: ['', 'D3', 'S1', 'S2', 'S3'].map(v => ({ v, t: v || '— belum diisi —' })) },

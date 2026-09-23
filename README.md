@@ -75,7 +75,7 @@ Unggah seluruh isi folder ini ke repo GitHub, aktifkan GitHub Pages.
 |---|---|
 | Beranda | ringkasan jumlah, kelengkapan data, unduh cadangan |
 | Data Siswa | 684 siswa; tambah, ubah, pindah kelas massal, unggah CSV/Excel |
-| Data Guru | 39 guru dengan 20 isian; tugas melekat tampil di tiap baris. Tanda kelayakan TuSehat, Tunjangan Kesehatan (masa kerja 5 tahun, bukan Guru Tidak Tetap) dan TuKerja, Tunjangan Ketenagakerjaan (pemegang tugas Staf, 3 tahun sejak TMT staf), masing-masing dengan tombol pengesahan kepala sekolah |
+| Data Guru | 39 guru dengan 20 isian; tugas melekat tampil di tiap baris. Tanda kelayakan TuSehat, Tunjangan Kesehatan (masa kerja 5 tahun, bukan Guru Tidak Tetap) dan TuKerja, Tunjangan Ketenagakerjaan (pemegang tugas Staf, 5 tahun sejak menjadi staf), masing-masing dengan tombol pengesahan kepala sekolah |
 | Tugas Guru | wali kelas, staf, tugas tambahan, diperbantukan, piket, pembina ekskul; jam piket meja sekolah dan jam piket unit yang disepakati dicatat di sini. Tugas Staf juga menyimpan pola honor (bulanan, bulanan + insentif kedatangan, upah harian) dan sumber hari hadirnya (fingerprint / absen manual) |
 | Jadwal KBM | matriks hari × jam, per kelas atau per guru |
 | Kelompok Belajar | Tahsin dan Matematika Dasar beserta anggotanya |
@@ -136,7 +136,7 @@ dan unit, **Kesiswaan** untuk parkiran.
 - Satu siswa satu kelompok untuk tiap mata pelajaran
 - Siswa yang dikecualikan tidak bisa dimasukkan ke kelompoknya, dan sebaliknya
 - Memegang tugas Staf menggugurkan seluruh perhitungan honor tambahan
-- Kelayakan tunjangan BPJS dihitung, bukan diketik: Kesehatan = aktif, bukan Guru Tidak Tetap (Dapodiknya tidak menginduk di sini), TMT sekolah sudah 5 tahun; Ketenagakerjaan = aktif, memegang tugas Staf, TMT staf sudah 3 tahun. Yang diketik hanya pengesahan kepala sekolah per jenis, dan pembayaran berhenti sendiri begitu syaratnya gugur
+- Kelayakan tunjangan BPJS dihitung, bukan diketik: Kesehatan = aktif, bukan Guru Tidak Tetap (Dapodiknya tidak menginduk di sini), TMT sekolah sudah 5 tahun; Ketenagakerjaan = aktif, memegang tugas Staf, 5 tahun sejak menjadi staf (dari TMT sekolah; Guru Tetap Yayasan yang merangkap staf: dari TMT sebagai staf). Yang diketik hanya pengesahan kepala sekolah per jenis, dan pembayaran berhenti sendiri begitu syaratnya gugur
 
 ### Istilah yang mudah tertukar
 
