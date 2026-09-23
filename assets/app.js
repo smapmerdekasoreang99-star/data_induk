@@ -170,7 +170,7 @@ async function muatSemua() {
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
   ]);
   D.guru = guru || []; D.rombel = rombel || [];
-  // Kelayakan tunjangan BPJS Kesehatan, dihitung database; gagal = tanpa tanda.
+  // Kelayakan tunjangan TuSehat, dihitung database; gagal = tanpa tanda.
   await muatBpjs();
 
   // Rekap piket dibaca dari view, bukan disimpulkan sendiri.
@@ -893,7 +893,7 @@ function halGuru() {
         ${layak.map(b => esc(b.nama)).join(', ')}. Syaratnya: ${J.syarat}. Kepala sekolah mengesahkan lewat tombol
         <b>${J.singkat}</b> pada baris gurunya; tunjangan mulai bulan berikutnya sesudah ${J.genap}.</div>` : '';
     }).join('')}
-    ${terhenti.length ? `<div class="info-box"><b>${terhenti.length} pengesahan BPJS terhenti:</b>
+    ${terhenti.length ? `<div class="info-box"><b>${terhenti.length} pengesahan tunjangan terhenti:</b>
       ${terhenti.map(b => `${esc(b.nama)} — ${BPJS[b.jenis].singkat} (${esc(b.keterangan || '')})`).join(', ')}. Pembayarannya sudah berhenti
       sendiri di Induk Pembiayaan; pengesahannya bisa dibiarkan sebagai riwayat atau dicabut lewat tombol pada barisnya.</div>` : ''}
     <div class="bar">
@@ -947,10 +947,10 @@ function halGuru() {
    status: belum · memenuhi (belum disahkan) · disahkan · terhenti (disahkan,
    tetapi kelayakannya gugur — pembayaran berhenti sendiri).                */
 const BPJS = {
-  kesehatan:       { singkat: 'BPJS Kes', nama: 'BPJS Kesehatan',
+  kesehatan:       { singkat: 'TuSehat', nama: 'TuSehat',
                      syarat: 'masa kerja di sekolah ini sudah lima tahun dan bukan Guru Tidak Tetap (Dapodik menginduk di sini)',
                      gugur: 'guru nonaktif atau berubah menjadi Guru Tidak Tetap', tmt: 'TMT sekolah', genap: 'genap lima tahun' },
-  ketenagakerjaan: { singkat: 'BPJS TK', nama: 'BPJS Ketenagakerjaan',
+  ketenagakerjaan: { singkat: 'TuKerja', nama: 'TuKerja',
                      syarat: 'memegang tugas Staf dan sudah tiga tahun menjadi staf (TMT sebagai staf)',
                      gugur: 'guru nonaktif atau tidak lagi memegang tugas Staf', tmt: 'TMT staf', genap: 'genap tiga tahun' }
 };
@@ -1058,7 +1058,7 @@ function formGuru(id) {
         opsi: [{ v: '', t: '— belum diisi —' }, { v: 'L', t: 'Laki-laki' }, { v: 'P', t: 'Perempuan' }] },
       { k: 'jenis_ptk', label: 'Jenis PTK', tipe: 'pilih', wajib: true,
         opsi: PTK.map(v => ({ v, t: v })),
-        hint: 'Guru Tidak Tetap = Dapodiknya tidak menginduk di sekolah ini, jadi tidak berhak tunjangan BPJS Kesehatan. '
+        hint: 'Guru Tidak Tetap = Dapodiknya tidak menginduk di sekolah ini, jadi tidak berhak tunjangan TuSehat. '
             + 'Tiga jenis lainnya dianggap menginduk.' },
       { k: 'status_aktif', label: 'Status', tipe: 'pilih', wajib: true,
         opsi: STATUS_GURU.map(v => ({ v, t: v })),
@@ -1072,7 +1072,7 @@ function formGuru(id) {
       { k: 'tmt_guru', label: 'TMT sebagai guru', tipe: 'tanggal' },
       { k: 'tmt_status', label: 'TMT status kepegawaian', tipe: 'tanggal' },
       { k: 'tmt_staf', label: 'TMT sebagai staf', tipe: 'tanggal',
-        hint: 'Sejak kapan memegang tugas Staf. Dasar masa kerja tiga tahun untuk tunjangan BPJS Ketenagakerjaan; '
+        hint: 'Sejak kapan memegang tugas Staf. Dasar masa kerja tiga tahun untuk tunjangan TuKerja; '
             + 'kosongkan bila bukan staf.' },
 
       { k: 'pendidikan_terakhir', label: 'Pendidikan terakhir', tipe: 'pilih',
