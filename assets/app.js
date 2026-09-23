@@ -170,7 +170,7 @@ async function muatSemua() {
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
   ]);
   D.guru = guru || []; D.rombel = rombel || [];
-  // Kelayakan tunjangan TuSehat, dihitung database; gagal = tanpa tanda.
+  // Kelayakan TuSehat dan TuKerja, dihitung database; gagal = tanpa tanda.
   await muatBpjs();
 
   // Rekap piket dibaca dari view, bukan disimpulkan sendiri.
@@ -889,7 +889,7 @@ function halGuru() {
       <button class="btn" id="bUnduh">Unduh Data (xlsx)</button></div>
     ${Object.entries(BPJS).map(([jenis, J]) => {
       const layak = layakJenis(jenis);
-      return layak.length ? `<div class="info-box"><b>${layak.length} ${jenis === 'kesehatan' ? 'guru' : 'staf'} memenuhi syarat tunjangan ${J.nama} dan belum disahkan:</b>
+      return layak.length ? `<div class="info-box"><b>${layak.length} ${jenis === 'kesehatan' ? 'guru' : 'staf'} memenuhi syarat ${J.nama} (${J.panjang}) dan belum disahkan:</b>
         ${layak.map(b => esc(b.nama)).join(', ')}. Syaratnya: ${J.syarat}. Kepala sekolah mengesahkan lewat tombol
         <b>${J.singkat}</b> pada baris gurunya; tunjangan mulai bulan berikutnya sesudah ${J.genap}.</div>` : '';
     }).join('')}
@@ -947,10 +947,10 @@ function halGuru() {
    status: belum · memenuhi (belum disahkan) · disahkan · terhenti (disahkan,
    tetapi kelayakannya gugur — pembayaran berhenti sendiri).                */
 const BPJS = {
-  kesehatan:       { singkat: 'TuSehat', nama: 'TuSehat',
+  kesehatan:       { singkat: 'TuSehat', nama: 'TuSehat', panjang: 'Tunjangan Kesehatan',
                      syarat: 'masa kerja di sekolah ini sudah lima tahun dan bukan Guru Tidak Tetap (Dapodik menginduk di sini)',
                      gugur: 'guru nonaktif atau berubah menjadi Guru Tidak Tetap', tmt: 'TMT sekolah', genap: 'genap lima tahun' },
-  ketenagakerjaan: { singkat: 'TuKerja', nama: 'TuKerja',
+  ketenagakerjaan: { singkat: 'TuKerja', nama: 'TuKerja', panjang: 'Tunjangan Ketenagakerjaan',
                      syarat: 'memegang tugas Staf dan sudah tiga tahun menjadi staf (TMT sebagai staf)',
                      gugur: 'guru nonaktif atau tidak lagi memegang tugas Staf', tmt: 'TMT staf', genap: 'genap tiga tahun' }
 };
@@ -992,7 +992,7 @@ function dialogBpjs(id, jenis) {
   const g = D.guru.find(x => x.id === id) || {};
   if (b.status === 'memenuhi') {
     formulir({
-      judul: `Sahkan tunjangan ${J.nama}`,
+      judul: `Sahkan ${J.nama} (${J.panjang})`,
       catatan: 'Pengesahan kepala sekolah. Nama petugas yang sedang masuk dicatat sebagai pengesah. '
              + `Tunjangan berhenti sendiri bila ${J.gugur}.`,
       nilai: { mulai: b.mulai_layak },
@@ -1011,7 +1011,7 @@ function dialogBpjs(id, jenis) {
           await simpanBaru('guru_bpjs', { guru_id: id, jenis, mulai, catatan: n.catatan ? String(n.catatan).trim() : null });
           await muatBpjs();
         }
-        toast(`Tunjangan ${J.nama} disahkan`);
+        toast(`${J.nama} disahkan`);
       }
     });
     return;
@@ -1058,7 +1058,7 @@ function formGuru(id) {
         opsi: [{ v: '', t: '— belum diisi —' }, { v: 'L', t: 'Laki-laki' }, { v: 'P', t: 'Perempuan' }] },
       { k: 'jenis_ptk', label: 'Jenis PTK', tipe: 'pilih', wajib: true,
         opsi: PTK.map(v => ({ v, t: v })),
-        hint: 'Guru Tidak Tetap = Dapodiknya tidak menginduk di sekolah ini, jadi tidak berhak tunjangan TuSehat. '
+        hint: 'Guru Tidak Tetap = Dapodiknya tidak menginduk di sekolah ini, jadi tidak berhak TuSehat (Tunjangan Kesehatan). '
             + 'Tiga jenis lainnya dianggap menginduk.' },
       { k: 'status_aktif', label: 'Status', tipe: 'pilih', wajib: true,
         opsi: STATUS_GURU.map(v => ({ v, t: v })),
@@ -1072,7 +1072,7 @@ function formGuru(id) {
       { k: 'tmt_guru', label: 'TMT sebagai guru', tipe: 'tanggal' },
       { k: 'tmt_status', label: 'TMT status kepegawaian', tipe: 'tanggal' },
       { k: 'tmt_staf', label: 'TMT sebagai staf', tipe: 'tanggal',
-        hint: 'Sejak kapan memegang tugas Staf. Dasar masa kerja tiga tahun untuk tunjangan TuKerja; '
+        hint: 'Sejak kapan memegang tugas Staf. Dasar masa kerja tiga tahun untuk TuKerja (Tunjangan Ketenagakerjaan); '
             + 'kosongkan bila bukan staf.' },
 
       { k: 'pendidikan_terakhir', label: 'Pendidikan terakhir', tipe: 'pilih',
