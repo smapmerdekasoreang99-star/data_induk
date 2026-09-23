@@ -382,3 +382,8 @@ td.jk-td{padding:8px 6px;text-align:center}
 .jk-legenda.libur::before{background:var(--kertas-3);border:1px dashed var(--line)}
 table.jk-atur td{vertical-align:middle}
 table.jk-atur .field{min-width:0;width:100%}
+/* Tanda kelayakan tunjangan BPJS Kesehatan di daftar guru: kuning = memenuhi
+   syarat tetapi belum disahkan, hijau = disahkan, merah = terhenti. */
+.tag-w{background:var(--emas-muda);color:var(--emas-teks);border:1px solid var(--emas)}
+.tag-ok{background:var(--hadir-muda);color:var(--hadir-tua);border:1px solid var(--hadir)}
+.tag-x{background:#FBE9E5;color:#8C3A2B;border:1px solid #C9705E}
