@@ -1220,7 +1220,8 @@ function halTugas() {
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Tugas Guru</h1>
       <p>Tugas yang melekat pada guru untuk tahun ajaran ${esc(sesi.ta)}. Satu guru boleh merangkap beberapa tugas.</p></div>
-      <div class="sp"></div><button class="btn btn-p" id="bTambah">+ Tambah tugas</button></div>
+      <div class="sp"></div><button class="btn btn-p" id="bTambah">+ Tambah tugas</button>
+      <button class="btn" id="bUnduhTugas" title="Unduh daftar tugas yang sedang tampil (mengikuti saringan jenis dan guru)">Unduh (xlsx)</button></div>
 
     ${perlu.length ? `<div class="info-box"><b>${perlu.length} tugas belum lengkap.</b>
       Data lama tetap tersimpan, tetapi akan diminta dilengkapi begitu disunting.
@@ -1266,6 +1267,7 @@ function halTugas() {
   $$('[data-jenis]').forEach(b => b.onclick = () => { ui.jenisTugas = b.dataset.jenis; gambar(); });
   if ($('#bSemuaGuru')) $('#bSemuaGuru').onclick = () => { ui.guruTugas = null; gambar(); };
   $('#bTambah').onclick = () => formTugas(null);
+  $('#bUnduhTugas').onclick = () => unduhTugasXlsx(data);
   $('tbody').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
     const t = D.tugas.find(x => String(x.id) === tr.dataset.id);
@@ -1273,6 +1275,34 @@ function halTugas() {
     else if (e.target.classList.contains('bSelesai')) akhiriTugas(t);
     else if (e.target.classList.contains('bHapusTugas')) hapusTugas(t);
   };
+}
+
+/* Unduhan daftar tugas: isinya persis yang sedang tampil di layar —
+   saringan jenis dan saringan guru ikut terbawa — supaya yang diunduh
+   adalah yang barusan dilihat, bukan seluruh tabel. Kolomnya mengikuti
+   tabel layar, ditambah pola honor, tanggal selesai, dan keterangan yang
+   di layar hanya muncul di formulir. */
+function unduhTugasXlsx(data) {
+  const kolom = [
+    ['Guru', 'guru'], ['Jenis', 'jenis'], ['Kelas / Jabatan', 'rincian'], ['Jam', 'jam'],
+    ['Pola Honor', 'pola'], ['Mulai', 'mulai'], ['Selesai', 'selesai'], ['Status', 'status'],
+    ['Belum Lengkap', 'kurang'], ['Keterangan', 'keterangan']
+  ];
+  const baris = data.map(t => ({
+    guru: namaGuru(t.guru_id), jenis: t.jenis || '', rincian: rincianTugas(t),
+    jam: jamTugas(t) || '', pola: teksPola(t),
+    mulai: t.mulai ? tglIndo(t.mulai) : '', selesai: t.selesai ? tglIndo(t.selesai) : '',
+    status: t.aktif ? 'aktif' : 'selesai',
+    kurang: belumLengkap(t).join(', '), keterangan: t.keterangan || ''
+  }));
+  const saringan = [
+    ui.jenisTugas ? 'jenis ' + ui.jenisTugas : 'semua jenis',
+    ui.guruTugas ? namaGuru(ui.guruTugas) : ''
+  ].filter(Boolean).join('  ·  ');
+  const judul = 'Tugas Guru' + (ui.jenisTugas ? ' ' + ui.jenisTugas : '')
+    + (ui.guruTugas ? ' ' + namaPendek(namaGuru(ui.guruTugas)) : '');
+  unduhTabel(judul.replace(/[^\w ]+/g, ' ').trim().replace(/ +/g, '_'), kolom, baris,
+    `Tahun Pelajaran ${sesi.ta}  ·  ${saringan}  ·  ${baris.length} tugas`);
 }
 
 function formTugas(t) {
