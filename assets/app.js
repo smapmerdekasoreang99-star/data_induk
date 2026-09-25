@@ -3336,8 +3336,10 @@ const KELOMPOK_TARIF = [
   ['pendukung', 'Tenaga Pendukung (honor per orang)']
 ];
 const namaKelompokTarif = k => (KELOMPOK_TARIF.find(([v]) => v === k) || [k, k || '—'])[1];
-function kelompokTarifBawaan(jabatan) {
+function kelompokTarifBawaan(jabatan, jenisPtk) {
   const j = (jabatan || '').toLowerCase();
+  // Jenis PTK Pimpinan selalu kelompok pimpinan, apa pun jabatan tugas Staf-nya (25 September 2026).
+  if (jenisPtk === 'Pimpinan') return j.startsWith('kepala sekolah') ? 'kepala_sekolah' : 'wakasek';
   if (!j) return 'staf';
   if (j === 'satpam' || j === 'petugas kebersihan') return 'pendukung';
   if (j.startsWith('kepala sekolah')) return 'kepala_sekolah';
@@ -3347,7 +3349,7 @@ function kelompokTarifBawaan(jabatan) {
   return 'staf';
 }
 // Kelompok yang berlaku untuk satu tugas Staf: yang ditetapkan, atau bawaan jabatannya.
-const kelompokTarifDari = t => (t && t.kelompok_tarif) || kelompokTarifBawaan(t && t.jabatan);
+const kelompokTarifDari = (t, g) => (t && t.kelompok_tarif) || kelompokTarifBawaan(t && t.jabatan, g && g.jenis_ptk);
 const menitDari = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
 const teksMenit = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 const teksDurasi = menit => { const j = Math.floor(menit / 60), m = menit % 60; return j + ' jam' + (m ? ' ' + m + ' mnt' : ''); };
@@ -3362,7 +3364,8 @@ function efektifHari(guruId, h) {
 }
 const lamaHari = e => e.bekerja ? menitDari(e.pulang) - menitDari(e.masuk) : 0;
 const menitMinggu = ambil => HARI_KERJA.reduce((a, h) => a + lamaHari(ambil(h)), 0);
-const stafTunduk = () => D.guru.filter(g => g.status_aktif === 'Aktif' && stafDari(g.id));
+// Pimpinan (jenis PTK) ikut tunduk walau tidak memegang tugas Staf, sama seperti v_jam_kerja_guru.
+const stafTunduk = () => D.guru.filter(g => g.status_aktif === 'Aktif' && (stafDari(g.id) || g.jenis_ptk === 'Pimpinan'));
 const rentangJam = e => e.bekerja ? jam5(e.masuk) + '–' + jam5(e.pulang) : 'libur';
 
 function halJamKerja() {
@@ -3423,11 +3426,11 @@ function halJamKerja() {
         <th style="width:150px">Kelompok tarif</th><th style="width:60px"></th>
       </tr></thead><tbody>${
         staf.length ? staf.map(g => {
-          const t = stafDari(g.id);
+          const t = stafDari(g.id) || {};   // Pimpinan boleh tanpa tugas Staf
           const nKhusus = HARI_KERJA.filter(h => kecualiHari(g.id, h)).length;
           const hariKerja = HARI_KERJA.filter(h => efektifHari(g.id, h).bekerja).length;
           return `<tr data-id="${esc(g.id)}">
-            <td style="font-weight:500">${esc(g.nama)}<div class="kecil">${esc(t.jabatan || '—')}${
+            <td style="font-weight:500">${esc(g.nama)}<div class="kecil">${esc(t.jabatan || (g.jenis_ptk === 'Pimpinan' ? 'Pimpinan (tanpa tugas Staf)' : '—'))}${
               t.sumber_hadir === 'manual' ? ' · absen manual' : ''}${nKhusus ? ` · ${nKhusus} hari berbeda dari bawaan` : ''}</div></td>
             ${HARI_KERJA.map(h => {
               const e = efektifHari(g.id, h);
@@ -3436,7 +3439,7 @@ function halJamKerja() {
             }).join('')}
             <td class="num">${hariKerja}</td>
             <td class="num">${teksDurasi(menitMinggu(h => efektifHari(g.id, h)))}</td>
-            <td>${esc(namaKelompokTarif(kelompokTarifDari(t)))}${t && t.kelompok_tarif ? '' : '<div class="kecil">bawaan menurut jabatan</div>'}</td>
+            <td>${esc(namaKelompokTarif(kelompokTarifDari(t, g)))}${t.kelompok_tarif ? '' : `<div class="kecil">${g.jenis_ptk === 'Pimpinan' ? 'bawaan: jenis PTK Pimpinan' : 'bawaan menurut jabatan'}</div>`}</td>
             <td class="act"><button class="btn btn-sm bAtur">Atur</button></td></tr>`;
         }).join('')
         : `<tr><td colspan="${HARI_KERJA.length + 5}"><div class="empty"><b>Belum ada pemegang tugas Staf</b>
@@ -3492,16 +3495,16 @@ function dialogJamKerjaGuru(g) {
   const MODE_JK = [['bawaan', 'Ikut bawaan'], ['khusus', 'Jam khusus'], ['libur', 'Libur']];
   const catatanLama = (D.jamKerjaGuru.find(r => r.guru_id === g.id && r.catatan) || {}).catatan || '';
   const tugas = stafDari(g.id);
-  const bawaanKelompok = kelompokTarifBawaan(tugas && tugas.jabatan);
+  const bawaanKelompok = kelompokTarifBawaan(tugas && tugas.jabatan, g.jenis_ptk);
 
   bukaModal(`<h2>Jam kerja — ${esc(g.nama)}</h2><div class="body">
     <div class="fg"><label>Kelompok tarif honor</label>
-      <select class="field" id="jkKelompok">
+      <select class="field" id="jkKelompok" ${tugas ? '' : 'disabled'}>
         <option value="">Bawaan menurut jabatan — ${esc(namaKelompokTarif(bawaanKelompok))}</option>
         ${KELOMPOK_TARIF.map(([v, t]) => `<option value="${v}" ${tugas && tugas.kelompok_tarif === v ? 'selected' : ''}>${t}</option>`).join('')}
       </select>
       <div class="hint">Menentukan tunjangan jabatan dan indeks di Induk Pembiayaan → Nominal Penggajian Staf.
-        Jabatan: ${esc((tugas && tugas.jabatan) || '—')}.</div></div>
+        Jabatan: ${esc((tugas && tugas.jabatan) || '—')}.${tugas ? '' : ' Tanpa tugas Staf, kelompoknya mengikuti jenis PTK dan tidak bisa ditetapkan di sini.'}</div></div>
     <p class="msg kecil">Tanpa pengecualian, staf mengikuti ketentuan bawaan sekolah.
       Ubah hanya hari yang memang berbeda.</p>
     <table class="log jk-atur"><thead><tr>
