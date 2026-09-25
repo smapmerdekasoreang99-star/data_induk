@@ -166,7 +166,7 @@ async function muatSemua() {
     ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc'),
     ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
     ambil('mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
-    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,honor_mengajar,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
+    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,honor_mengajar,kelompok_tarif,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
     ambil('jabatan', 'select=nama,kategori,aktif&order=urutan'),
     ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
   ]);
@@ -3322,6 +3322,29 @@ function formParkiran(hari) {
    berbeda dari bawaan). Disimpan di sini — satu tempat mengubah — dan dibaca
    Kehadiran Guru untuk dibandingkan dengan rekaman mesin fingerprint.      */
 const HARI_KERJA = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+/* Kelompok tarif honor staf (25 September 2026): menentukan tunjangan jabatan
+   dan indeks mana di Induk Pembiayaan → Nominal Penggajian Staf yang dipakai
+   seseorang. Disimpan per orang pada tugas Staf-nya (guru_tugas.kelompok_tarif);
+   kosong berarti bawaan menurut nama jabatan — logikanya sama dengan
+   kelompok_tarif_bawaan() di database, dan dua orang berjabatan sama boleh
+   berbeda kelompok (guru berjabatan struktural lawan tenaga kependidikan). */
+const KELOMPOK_TARIF = [
+  ['kepala_sekolah', 'Kepala Sekolah'], ['wakasek', 'Wakil Kepala Sekolah'], ['staf', 'Staf'],
+  ['kepala_tu', 'Kepala TU'], ['tata_usaha', 'Tata Usaha dan Toolman'], ['caraka_satpam', 'Caraka dan Satpam']
+];
+const namaKelompokTarif = k => (KELOMPOK_TARIF.find(([v]) => v === k) || [k, k || '—'])[1];
+function kelompokTarifBawaan(jabatan) {
+  const j = (jabatan || '').toLowerCase();
+  if (!j) return 'staf';
+  if (j.startsWith('kepala sekolah')) return 'kepala_sekolah';
+  if (j.startsWith('wakasek') || j.startsWith('wakil kepala')) return 'wakasek';
+  if (j.startsWith('kepala tata usaha') || j.startsWith('kepala tu')) return 'kepala_tu';
+  if (/satpam|kebersihan|caraka/.test(j)) return 'caraka_satpam';
+  return 'staf';
+}
+// Kelompok yang berlaku untuk satu tugas Staf: yang ditetapkan, atau bawaan jabatannya.
+const kelompokTarifDari = t => (t && t.kelompok_tarif) || kelompokTarifBawaan(t && t.jabatan);
 const menitDari = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
 const teksMenit = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 const teksDurasi = menit => { const j = Math.floor(menit / 60), m = menit % 60; return j + ' jam' + (m ? ' ' + m + ' mnt' : ''); };
@@ -3359,8 +3382,10 @@ function halJamKerja() {
 
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Jam Kerja Staf</h1>
-      <p>Ketentuan jam masuk dan pulang bagi pemegang tugas Staf. Rekaman mesin fingerprint
-         dibandingkan dengan ketentuan ini di aplikasi Kehadiran Guru.</p></div></div>
+      <p>Ketentuan jam masuk dan pulang bagi pemegang tugas Staf, berikut hari dan jam kerja per
+         minggu tiap orang dan kelompok tarif honornya. Rekaman mesin fingerprint dibandingkan
+         dengan ketentuan ini di Kehadiran Guru; hari, jam, dan kelompok tarifnya dipakai
+         Induk Pembiayaan untuk honor staf.</p></div></div>
 
     ${!D.jamKerja.length ? `<div class="panel"><div class="empty"><b>Ketentuan jam kerja belum terbaca</b>
       Jalankan migrasi database terbaru, lalu muat ulang halaman.</div></div>` : `
@@ -3390,11 +3415,14 @@ function halJamKerja() {
       <div class="scroll"><table><thead><tr>
         <th style="min-width:200px">Staf</th>
         ${HARI_KERJA.map(h => `<th class="jk-th">${h.slice(0, 3)}</th>`).join('')}
-        <th style="width:90px" class="num">Jam/minggu</th><th style="width:60px"></th>
+        <th style="width:80px" class="num">Hari/minggu</th>
+        <th style="width:90px" class="num">Jam/minggu</th>
+        <th style="width:150px">Kelompok tarif</th><th style="width:60px"></th>
       </tr></thead><tbody>${
         staf.length ? staf.map(g => {
           const t = stafDari(g.id);
           const nKhusus = HARI_KERJA.filter(h => kecualiHari(g.id, h)).length;
+          const hariKerja = HARI_KERJA.filter(h => efektifHari(g.id, h).bekerja).length;
           return `<tr data-id="${esc(g.id)}">
             <td style="font-weight:500">${esc(g.nama)}<div class="kecil">${esc(t.jabatan || '—')}${
               t.sumber_hadir === 'manual' ? ' · absen manual' : ''}${nKhusus ? ` · ${nKhusus} hari berbeda dari bawaan` : ''}</div></td>
@@ -3403,10 +3431,12 @@ function halJamKerja() {
               return `<td class="jk-td"><span class="jk-chip ${e.sumber}${e.bekerja ? '' : ' off'}"
                 title="${esc(h + ': ' + rentangJam(e) + ' (' + e.sumber + ')' + (e.catatan ? '\n' + e.catatan : ''))}">${rentangJam(e)}</span></td>`;
             }).join('')}
+            <td class="num">${hariKerja}</td>
             <td class="num">${teksDurasi(menitMinggu(h => efektifHari(g.id, h)))}</td>
+            <td>${esc(namaKelompokTarif(kelompokTarifDari(t)))}${t && t.kelompok_tarif ? '' : '<div class="kecil">bawaan menurut jabatan</div>'}</td>
             <td class="act"><button class="btn btn-sm bAtur">Atur</button></td></tr>`;
         }).join('')
-        : `<tr><td colspan="${HARI_KERJA.length + 3}"><div class="empty"><b>Belum ada pemegang tugas Staf</b>
+        : `<tr><td colspan="${HARI_KERJA.length + 5}"><div class="empty"><b>Belum ada pemegang tugas Staf</b>
             Catatkan lewat halaman Tugas Guru dengan jenis Staf.</div></td></tr>`
       }</tbody></table></div>
       <div class="foot"><div class="info">
@@ -3417,8 +3447,10 @@ function halJamKerja() {
 
     <p class="kecil">Yang tunduk pada ketentuan ini adalah pemegang tugas Staf yang aktif di Tugas Guru,
       termasuk staf kontrak. Tanpa pengecualian, semuanya mengikuti ketentuan bawaan; ketuk <b>Atur</b>
-      untuk staf yang harinya berbeda, misalnya kontrak Senin–Jumat saja. Guru yang bukan staf tidak
-      diatur di sini: jam kerjanya mengikuti jadwal mengajar.</p>`}`;
+      untuk staf yang harinya berbeda, misalnya kontrak Senin–Jumat saja, atau yang kelompok tarif
+      honornya bukan bawaan jabatannya — misalnya tenaga kependidikan berjabatan Staf Tata Usaha yang
+      memakai tarif Tata Usaha, bukan Staf. Guru yang bukan staf tidak diatur di sini: jam kerjanya
+      mengikuti jadwal mengajar.</p>`}`;
 
   $$('.jk-hari').forEach(b => b.onclick = () => formJamKerjaHari(b.dataset.hari));
   $$('tbody tr[data-id] .bAtur').forEach(b => b.onclick = () => {
@@ -3456,8 +3488,17 @@ function formJamKerjaHari(hari) {
 function dialogJamKerjaGuru(g) {
   const MODE_JK = [['bawaan', 'Ikut bawaan'], ['khusus', 'Jam khusus'], ['libur', 'Libur']];
   const catatanLama = (D.jamKerjaGuru.find(r => r.guru_id === g.id && r.catatan) || {}).catatan || '';
+  const tugas = stafDari(g.id);
+  const bawaanKelompok = kelompokTarifBawaan(tugas && tugas.jabatan);
 
   bukaModal(`<h2>Jam kerja — ${esc(g.nama)}</h2><div class="body">
+    <div class="fg"><label>Kelompok tarif honor</label>
+      <select class="field" id="jkKelompok">
+        <option value="">Bawaan menurut jabatan — ${esc(namaKelompokTarif(bawaanKelompok))}</option>
+        ${KELOMPOK_TARIF.map(([v, t]) => `<option value="${v}" ${tugas && tugas.kelompok_tarif === v ? 'selected' : ''}>${t}</option>`).join('')}
+      </select>
+      <div class="hint">Menentukan tunjangan jabatan dan indeks di Induk Pembiayaan → Nominal Penggajian Staf.
+        Jabatan: ${esc((tugas && tugas.jabatan) || '—')}.</div></div>
     <p class="msg kecil">Tanpa pengecualian, staf mengikuti ketentuan bawaan sekolah.
       Ubah hanya hari yang memang berbeda.</p>
     <table class="log jk-atur"><thead><tr>
@@ -3489,6 +3530,8 @@ function dialogJamKerjaGuru(g) {
   $('#m-batal').onclick = tutupModal;
   $('#m-simpan').onclick = () => {
     const catatan = $('#jkCatatan').value.trim() || null;
+    const kelompokBaru = $('#jkKelompok').value || null;
+    const kelompokBerubah = tugas && kelompokBaru !== (tugas.kelompok_tarif || null);
     const baris = [];
     for (const tr of $$('#modal-root tr[data-hari]')) {
       const hari = tr.dataset.hari, mode = $('[data-mode]', tr).value;
@@ -3507,10 +3550,14 @@ function dialogJamKerjaGuru(g) {
         await buang('jam_kerja_guru', `guru_id=eq.${enc(g.id)}`);
         if (baris.length) await api('/rest/v1/jam_kerja_guru', { method: 'POST', body: JSON.stringify(baris) });
         D.jamKerjaGuru = await ambilSemua('jam_kerja_guru', 'select=*');
+        // Kelompok tarif melekat pada tugas Staf-nya, bukan pada jam kerja.
+        if (kelompokBerubah) await perbarui('guru_tugas', `id=eq.${enc(tugas.id)}`, { kelompok_tarif: kelompokBaru });
       } else {
         D.jamKerjaGuru = D.jamKerjaGuru.filter(r => r.guru_id !== g.id).concat(baris);
       }
-      toast(`${namaPendek(g.nama)}: ${baris.length ? baris.length + ' hari dikecualikan' : 'ikut bawaan sepenuhnya'}`);
+      if (kelompokBerubah) tugas.kelompok_tarif = kelompokBaru;
+      toast(`${namaPendek(g.nama)}: ${baris.length ? baris.length + ' hari dikecualikan' : 'ikut bawaan sepenuhnya'}`
+        + (kelompokBerubah ? `, kelompok tarif ${kelompokBaru ? namaKelompokTarif(kelompokBaru) : 'bawaan jabatan'}` : ''));
     });
   };
 }
