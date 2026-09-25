@@ -3331,12 +3331,15 @@ const HARI_KERJA = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
    berbeda kelompok (guru berjabatan struktural lawan tenaga kependidikan). */
 const KELOMPOK_TARIF = [
   ['kepala_sekolah', 'Kepala Sekolah'], ['wakasek', 'Wakil Kepala Sekolah'], ['staf', 'Staf'],
-  ['kepala_tu', 'Kepala TU'], ['tata_usaha', 'Tata Usaha dan Toolman'], ['caraka_satpam', 'Caraka dan Satpam']
+  ['kepala_tu', 'Kepala TU'], ['tata_usaha', 'Tata Usaha dan Toolman'], ['caraka_satpam', 'Caraka dan Satpam'],
+  // Tenaga pendukung: honornya komponen per orang (Induk Pembiayaan → Nominal Penggajian Staf), bukan formulasi umum.
+  ['pendukung', 'Tenaga Pendukung (honor per orang)']
 ];
 const namaKelompokTarif = k => (KELOMPOK_TARIF.find(([v]) => v === k) || [k, k || '—'])[1];
 function kelompokTarifBawaan(jabatan) {
   const j = (jabatan || '').toLowerCase();
   if (!j) return 'staf';
+  if (j === 'satpam' || j === 'petugas kebersihan') return 'pendukung';
   if (j.startsWith('kepala sekolah')) return 'kepala_sekolah';
   if (j.startsWith('wakasek') || j.startsWith('wakil kepala')) return 'wakasek';
   if (j.startsWith('kepala tata usaha') || j.startsWith('kepala tu')) return 'kepala_tu';
