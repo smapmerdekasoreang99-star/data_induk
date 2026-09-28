@@ -4569,30 +4569,14 @@ function profilKop() {
 
 /* Blok tanda tangan seragam, juga dari Profil Dokumen. */
 function ttdExcel(ws, baris, kolomAkhir) {
-  // Blok tanda tangan digabung dari beberapa kolom terakhir sampai
-  // lebarnya cukup memuat tanggal — kalau ditaruh pada satu kolom
-  // sempit, tulisannya meluber melewati garis tabel paling kanan.
-  const lebar = (ws.columns || []).map(k => (k && k.width) || 10);
-  let kumpul = 0, mulai = kolomAkhir;
-  for (let k = kolomAkhir; k >= 1; k--) {
-    kumpul += lebar[k - 1] || 10;
-    mulai = k;
-    if (kumpul >= 30) break;
-  }
-
+  /* Satu penanda tangan di kanan, selebar ±40 % kop dan dirata tengah —
+     aturan bersama di kop-dokumen.js (KopDokumen.ttdExcel), supaya
+     proporsional terhadap lebar kop di atasnya. */
   const tgl = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-  const tulis = (r, teks, gaya) => {
-    if (mulai < kolomAkhir) ws.mergeCells(r, mulai, r, kolomAkhir);
-    const c = ws.getCell(r, mulai);
-    c.value = teks;
-    c.font = Object.assign({ size: 10 }, gaya || {});
-    c.alignment = { horizontal: 'center', vertical: 'middle' };
-  };
-
-  tulis(baris, (SEKOLAH.kota || '') + ', ' + tgl);
-  tulis(baris + 1, 'Kepala Sekolah,');
-  tulis(baris + 5, SEKOLAH.kepala || '', { bold: true, underline: true });
-  if (SEKOLAH.nip) tulis(baris + 6, 'NIP. ' + SEKOLAH.nip, { size: 9.5 });
+  return window.KopDokumen.ttdExcel(ws, baris, { kolomAkhir, ruang: 3, blok: [
+    { atas: [(SEKOLAH.kota || '') + ', ' + tgl, 'Kepala Sekolah,'], nama: SEKOLAH.kepala || '',
+      nip: SEKOLAH.nip ? 'NIP. ' + SEKOLAH.nip : null }
+  ] });
 }
 
 /* Daftar bertabel — siswa, guru, kelompok, dan sejenisnya. Kini berkop
