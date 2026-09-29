@@ -588,7 +588,7 @@ function halBeranda() {
     <div class="head"><div><h1>Beranda</h1>
       <p>Data induk sekolah — dipakai bersama oleh seluruh aplikasi. Tahun ajaran ${esc(sesi.ta)}.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bCadangan">Unduh cadangan</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bCadangan">Unduh cadangan</button></div>
     ${MODE === 'contoh' ? `<div class="info-box"><b>Mode contoh.</b> Isi bagian KONFIG di
       <code>assets/app.js</code> untuk menyambungkan ke database. Perubahan tidak tersimpan.</div>` : ''}
     <div class="kartu-baris">
@@ -635,9 +635,9 @@ function halSiswa() {
     <div class="head"><div><h1>Data Siswa</h1><p>${D.siswa.length} siswa terdaftar pada tahun ajaran ${esc(sesi.ta)}.</p></div>
       <div class="sp"></div>
       <button class="btn btn-p" id="bTambah">+ Tambah siswa</button>
-      <button class="btn" id="bUnggah">Unggah berkas</button>
-      <button class="btn" id="bUnduh">Unduh Data (xlsx)</button>
-      <button class="btn" id="bUnduhAbsen">Unduh Absen (xlsx)</button></div>
+      <button class="btn-unduh unggah" id="bUnggah">Unggah berkas</button>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduh">Unduh data</button>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsen">Unduh absen</button></div>
     <div class="bar">
       <div class="grow"><input class="field" id="q" placeholder="Cari nama, NISN, atau NIS…" value="${esc(ui.qSiswa)}"></div>
       <select class="field" id="fStatus" style="width:auto">
@@ -886,8 +886,8 @@ function halGuru() {
     <div class="head"><div><h1>Data Guru</h1><p>${D.guru.length} guru terdaftar. Tugas melekat dicatat per tahun ajaran.</p></div>
       <div class="sp"></div>
       <button class="btn btn-p" id="bTambah">+ Tambah guru</button>
-      <button class="btn" id="bUnggah">Unggah berkas</button>
-      <button class="btn" id="bUnduh">Unduh Data (xlsx)</button>
+      <button class="btn-unduh unggah" id="bUnggah">Unggah berkas</button>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduh">Unduh data</button>
       <button class="btn" id="bUlang" title="Baca ulang data guru dan kelayakan tunjangan dari server">Muat ulang</button></div>
     ${Object.entries(BPJS).map(([jenis, J]) => {
       const layak = layakJenis(jenis);
@@ -1221,7 +1221,7 @@ function halTugas() {
     <div class="head"><div><h1>Tugas Guru</h1>
       <p>Tugas yang melekat pada guru untuk tahun ajaran ${esc(sesi.ta)}. Satu guru boleh merangkap beberapa tugas.</p></div>
       <div class="sp"></div><button class="btn btn-p" id="bTambah">+ Tambah tugas</button>
-      <button class="btn" id="bUnduhTugas" title="Unduh daftar tugas yang sedang tampil (mengikuti saringan jenis dan guru)">Unduh (xlsx)</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhTugas" title="Unduh daftar tugas yang sedang tampil (mengikuti saringan jenis dan guru)">Unduh</button></div>
 
     ${perlu.length ? `<div class="info-box"><b>${perlu.length} tugas belum lengkap.</b>
       Data lama tetap tersimpan, tetapi akan diminta dilengkapi begitu disunting.
@@ -1646,7 +1646,7 @@ function halPiketMatriks() {
     <div class="head"><div><h1>Piket Meja Sekolah</h1>
       <p>Siapa berjaga pada hari dan jam mana. Jam yang kosong tidak ada petugasnya.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bUnduhPiket">Unduh (xlsx)</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhPiket">Unduh</button></div>
 
     ${barPiket('meja')}
     ${barSubMeja('matriks', '<div class="sp" style="flex:1"></div>' + dasarAda.map(d => {
@@ -2385,8 +2385,8 @@ function halJadwal() {
       <p>Disunting di sini; aplikasi Kehadiran Guru hanya membacanya.
          Tahun ajaran ${esc(sesi.ta)}, semester ${smt}${smt === semesterSekarang() ? ' (berjalan)' : ''}.</p></div>
       <div class="sp"></div>
-      ${sudut !== 'hari' ? '<button class="btn" id="bUnduhJadwal">Unduh (xlsx)</button>' : ''}
-      <button class="btn" id="bUnduhSemua">Unduh semua kelas</button></div>
+      ${sudut !== 'hari' ? '<button class="btn-unduh" data-fmt="xlsx" id="bUnduhJadwal">Unduh</button>' : ''}
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhSemua">Unduh semua kelas</button></div>
 
     <div class="bar">
       <div class="mx-seg">
@@ -2719,8 +2719,8 @@ function halKelompok() {
          Rapornya tetap dikembalikan ke wali kelas rombel masing-masing.</p></div>
       <div class="sp"></div>
       ${kel ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
-      <button class="btn" id="bUnduhKelompok">Unduh Data (xlsx)</button>
-      ${kel ? '<button class="btn" id="bUnduhAbsenKel">Unduh Absen (xlsx)</button>' : ''}</div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhKelompok">Unduh data</button>
+      ${kel ? '<button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsenKel">Unduh absen</button>' : ''}</div>
 
     ${D.galat.kelompok ? `<div class="info-box"><b>Data kelompok tidak dapat dibaca.</b>
       ${esc(D.galat.kelompok)}<br>Kemungkinan berkas kelompok belajar belum dijalankan.</div>` : ''}
@@ -3019,7 +3019,7 @@ function halPiketUnit() {
       <p>Kapan tiap penanggung jawab menjaga unitnya. Seret kotak untuk memindahkan,
          atau ketuk sel untuk mengaturnya lewat daftar.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bUnduhUnit">Unduh (xlsx)</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhUnit">Unduh</button></div>
 
     ${barPiket('unit', '<div class="sp" style="flex:1"></div>' + unit.map(t => {
       const w = warnaUnit(t.id);
@@ -3215,7 +3215,7 @@ function halPiketParkiran() {
       <p>Pengawas parkiran sesudah jam pulang — satu petugas per hari kerja.
          Kehadirannya dicatat di aplikasi Kehadiran Guru, halaman Pelaksanaan Piket.</p></div>
       <div class="sp"></div>
-      <button class="btn" id="bUnduhParkiran">Unduh (xlsx)</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhParkiran">Unduh</button></div>
 
     ${barPiket('parkiran')}
 
@@ -4173,7 +4173,7 @@ function halTahun() {
         <p class="msg">Unduh seluruh isi data induk menjadi satu berkas Excel berisi beberapa lembar:
           siswa, guru, rombel, tugas, dan mata pelajaran. Simpan di drive sekolah secara berkala —
           Supabase versi gratis tidak menyediakan pemulihan otomatis ke titik waktu tertentu.</p>
-        <button class="btn" id="bCadangan">Unduh cadangan lengkap</button></div></div>`;
+        <button class="btn-unduh" data-fmt="xlsx" id="bCadangan">Unduh cadangan lengkap</button></div></div>`;
 
   $('#bCadangan').onclick = unduhCadangan;
   $('#bTambah').onclick = () => formulir({
