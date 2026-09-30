@@ -220,6 +220,20 @@ ini, jadi perombakan semester diunggah pada hari pertama semesternya. Bila
 tanggal berlaku tidak sesudah tanggal mulai keanggotaan lamanya, itu dianggap
 koreksi salah isi dan barisnya diubah di tempat.
 
+**Mengubah kelompoknya sendiri** — di panel kelompok yang dibuka:
+
+- **Ubah**: nama dan tingkat. Mata pelajarannya tidak bisa diubah; buat
+  kelompok baru lalu pindahkan anggotanya. Nama baru ikut tampil di jadwal dan
+  rekap lama (semuanya menunjuk ke id kelompok, bukan namanya). Tingkat tidak
+  bisa diubah bila ada anggota dari tingkat lain.
+- **Nonaktifkan**: kelompok tidak muncul lagi sebagai pilihan (tambah anggota,
+  pindah, lembar Excel, Jadwal KBM) tetapi tidak dihapus, jadi riwayatnya
+  tetap terbaca. Syaratnya tidak ada anggota aktif dan tidak ada jadwal di
+  semester berjalan. Kelompok nonaktif dikumpulkan di baris *Nonaktif* dan bisa
+  **Diaktifkan lagi**.
+- **Menggabungkan dua kelompok**: centang semua anggota kelompok A →
+  Pindahkan terpilih ke B → alihkan jadwal A di Jadwal KBM → Nonaktifkan A.
+
 **Mutasi masuk** — Data Siswa → Tambah siswa → tempatkan di rombel → daftarkan
 ke kelompok belajar.
 

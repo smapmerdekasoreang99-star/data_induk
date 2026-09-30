@@ -2211,7 +2211,9 @@ function halJadwal() {
         const peta = new Map();
         D.jadwal.forEach(j => peta.set(j.kelas, { id: j.kelas_id, nama: j.kelas, jenis: j.jenis_kelas }));
         D.rombel.forEach(r => { if (!peta.has(r.kode)) peta.set(r.kode, { id: r.id, nama: r.kode, jenis: 'Rombel' }); });
-        D.kelompok.forEach(k => { if (!peta.has(k.nama)) peta.set(k.nama, { id: k.id, nama: k.nama, jenis: 'Kelompok' }); });
+        // Kelompok nonaktif hanya tampil bila masih punya jadwal.
+        D.kelompok.filter(k => k.aktif !== false)
+          .forEach(k => { if (!peta.has(k.nama)) peta.set(k.nama, { id: k.id, nama: k.nama, jenis: 'Kelompok' }); });
         return [...peta.values()].sort((a, b) =>
           (a.jenis === b.jenis ? 0 : a.jenis === 'Rombel' ? -1 : 1) || urutNama(a.nama, b.nama));
       })()
@@ -2638,7 +2640,8 @@ function formJadwal(j, hari, jamKe, sudut, pilih, smt) {
   const baru = !j;
   const kelasPilihan = [
     ...D.rombel.map(r => ({ v: r.kode, t: r.kode })),
-    ...D.kelompok.map(k => ({ v: k.nama, t: k.nama + ' (kelompok)' }))
+    ...D.kelompok.filter(k => k.aktif !== false || (j && k.nama === j.kelas))
+      .map(k => ({ v: k.nama, t: k.nama + (k.aktif === false ? ' (kelompok nonaktif)' : ' (kelompok)') }))
   ];
   const awal = baru
     ? { hari, jam_ke: jamKe, semester: smt,
@@ -2699,7 +2702,9 @@ function formJadwal(j, hari, jamKe, sudut, pilih, smt) {
 
 /* ------------------------------------------------- kelompok belajar */
 function halKelompok() {
-  const pilih = ui.kelompokPilih || (D.kelompok[0] && D.kelompok[0].nama) || '';
+  const kelAktif = D.kelompok.filter(k => k.aktif !== false);
+  const kelNonaktif = D.kelompok.filter(k => k.aktif === false);
+  const pilih = ui.kelompokPilih || ((kelAktif[0] || D.kelompok[0] || {}).nama) || '';
   const anggota = D.anggota.filter(a => a.kelompok === pilih)
                            .sort((a, b) => a.siswa.localeCompare(b.siswa, 'id'));
   const kel = D.kelompok.find(k => k.nama === pilih);
@@ -2710,7 +2715,7 @@ function halKelompok() {
 
   // dikelompokkan per mata pelajaran
   const perMapel = new Map();
-  D.kelompok.forEach(k => {
+  kelAktif.forEach(k => {
     const m = k.mapel || '(belum ada mapel)';
     if (!perMapel.has(m)) perMapel.set(m, []);
     perMapel.get(m).push(k);
@@ -2722,7 +2727,7 @@ function halKelompok() {
          Rapornya tetap dikembalikan ke wali kelas rombel masing-masing.</p></div>
       <div class="sp"></div>
       <button class="btn" id="bTambahKelompok">+ Tambah kelompok</button>
-      ${kel ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
+      ${kel && kel.aktif !== false ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
       <button class="btn-unduh" data-fmt="xlsx" id="bUnduhKelompok">Unduh data</button>
       ${kel ? '<button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsenKel">Unduh absen</button>' : ''}
       <button class="btn-unduh" data-fmt="xlsx" id="bUnduhPindahKel" title="Rombak kelompok MD dan Tahsin lewat Excel, mis. tiap semester">Unduh lembar pindah</button>
@@ -2736,7 +2741,7 @@ function halKelompok() {
       <button class="linkish" id="bLihatBelum">Lihat daftarnya</button></div>` : ''}
 
     <div class="kartu-baris">
-      <div class="kartu"><b>${D.kelompok.length}</b><span>kelompok</span></div>
+      <div class="kartu"><b>${kelAktif.length}</b><span>kelompok aktif</span></div>
       <div class="kartu"><b>${D.anggota.length}</b><span>keanggotaan tercatat</span></div>
       <div class="kartu"><b>${D.dikecualikan.length}</b><span>dikecualikan</span></div>
       ${D.belumKelompok.length ? `<div class="kartu warn"><b>${D.belumKelompok.length}</b><span>belum tertangani</span></div>` : ''}
@@ -2748,9 +2753,18 @@ function halKelompok() {
         ${daftar.map(k => `<button class="chip ${pilih === k.nama ? 'on' : ''}" data-kel="${esc(k.nama)}">
           ${esc(k.nama.replace(/^Tahsin · /, ''))}<span class="c">${jumlah(k.nama)}</span></button>`).join('')}
       </div></div>`).join('')}
+    ${kelNonaktif.length ? `<div class="kelas-rail"><div class="kelas-row" style="opacity:.7">
+        <span class="lbl">Nonaktif</span>
+        ${kelNonaktif.map(k => `<button class="chip ${pilih === k.nama ? 'on' : ''}" data-kel="${esc(k.nama)}">
+          ${esc(k.nama)}</button>`).join('')}
+      </div></div>` : ''}
 
     ${kel ? `<div class="panel">
-      <div class="panel-head"><h3>${esc(kel.nama)}</h3>
+      <div class="panel-head"><h3>${esc(kel.nama)}${kel.aktif === false ? ' <span class="kecil">(nonaktif)</span>' : ''}</h3>
+        <button class="btn btn-sm" id="bUbahKelompok">Ubah</button>
+        ${kel.aktif === false
+          ? '<button class="btn btn-sm" id="bAktifkanKelompok">Aktifkan lagi</button>'
+          : '<button class="btn btn-sm btn-d" id="bNonaktifKelompok">Nonaktifkan</button>'}
         <div class="sp" style="flex:1"></div>
         ${terpilih.length ? `<button class="btn btn-sm btn-p" id="bPindahTerpilih">Pindahkan ${terpilih.length} terpilih</button>` : ''}
         <div class="info">${anggota.length} siswa${kel.tingkat ? ' · khusus tingkat ' + kel.tingkat : ' · semua tingkat'}</div></div>
@@ -2808,6 +2822,13 @@ function halKelompok() {
       new Map([[kel.nama, daftar]]), kel.mapel || '');
   };
   $('#bUnduhPindahKel').onclick = () => unduhLembarKenaikan('kelompok');
+  if ($('#bUbahKelompok')) $('#bUbahKelompok').onclick = () => formUbahKelompok(kel);
+  if ($('#bNonaktifKelompok')) $('#bNonaktifKelompok').onclick = () => nonaktifkanKelompok(kel);
+  if ($('#bAktifkanKelompok')) $('#bAktifkanKelompok').onclick = () => jalankan('Menyimpan…', async () => {
+    if (MODE === 'db') { await perbarui('kelas', `id=eq.${enc(kel.id)}`, { aktif: true }); await muatSemua(); }
+    else kel.aktif = true;
+    toast(kel.nama + ' aktif kembali');
+  });
   $('#bUnggahPindahKel').onclick = () => pilihBerkas(unggahLembarKelompok);
   if ($('#bPindahTerpilih')) $('#bPindahTerpilih').onclick = () => formPindahKelompok(terpilih);
   if ($('#cbKelAll')) $('#cbKelAll').onchange = e => {
@@ -2857,6 +2878,61 @@ function formKelompok() {
       }
       ui.kelompokPilih = nama;
       toast('Kelompok ' + nama + ' ditambahkan');
+    }
+  });
+}
+
+/* Mengubah nama atau tingkat kelompok. Mata pelajarannya tidak bisa
+   diubah — keanggotaan lama tercatat pada mapel itu; buat kelompok baru
+   dan pindahkan anggotanya. Nama baru ikut tampil di jadwal dan rekap
+   kehadiran lama, karena semuanya menunjuk ke kelompok yang sama. */
+function formUbahKelompok(kel) {
+  formulir({
+    judul: 'Ubah kelompok — ' + kel.nama,
+    catatan: `Mata pelajaran (${kel.mapel || '—'}) tidak bisa diubah; untuk itu buat kelompok baru lalu pindahkan anggotanya. Nama baru ikut tampil di jadwal dan rekap yang sudah ada.`,
+    nilai: { nama: kel.nama, tingkat: String(kel.tingkat || 0) },
+    kolom: [
+      { k: 'nama', label: 'Nama kelompok', wajib: true },
+      { k: 'tingkat', label: 'Tingkat', tipe: 'pilih',
+        opsi: [{ v: '0', t: 'Semua tingkat' }, { v: '10', t: 'Kelas 10' }, { v: '11', t: 'Kelas 11' }, { v: '12', t: 'Kelas 12' }] }
+    ],
+    simpan: async n => {
+      const nama = n.nama.trim(), tingkat = Number(n.tingkat) || 0;
+      if (D.kelompok.some(k => k.id !== kel.id && k.nama.toLowerCase() === nama.toLowerCase()))
+        throw new Error('Kelompok ' + nama + ' sudah ada.');
+      const beda = tingkat ? D.anggota.filter(a => a.kelompok === kel.nama && tingkatDari(a.rombel) !== tingkat) : [];
+      if (beda.length) throw new Error(`${beda.length} anggota bukan kelas ${tingkat} (mis. ${beda[0].siswa}, ${beda[0].rombel}). Pindahkan dulu, atau pilih Semua tingkat.`);
+      if (MODE === 'db') {
+        await perbarui('kelas', `id=eq.${enc(kel.id)}`, { nama_kelas: nama, tingkat });
+        await muatSemua();
+      } else Object.assign(kel, { nama, tingkat });
+      ui.kelompokPilih = nama;
+      toast('Kelompok diperbarui');
+    }
+  });
+}
+
+/* Menonaktifkan, bukan menghapus: keanggotaan dan jadwal lamanya tetap
+   menunjuk ke kelompok ini. Syaratnya kosong dari anggota dan tidak
+   terjadwal di semester berjalan — kalau tidak, siswanya kehilangan
+   kelompok dan jadwalnya tetap berjalan tanpa terlihat di pilihan. */
+function nonaktifkanKelompok(kel) {
+  const anggota = D.anggota.filter(a => a.kelompok === kel.nama);
+  if (anggota.length)
+    return toast(`${kel.nama} masih punya ${anggota.length} anggota. Pindahkan dulu (centang semua → Pindahkan terpilih), lalu nonaktifkan.`, true);
+  const jadwal = D.jadwal.filter(j => j.kelas_id === kel.id && Number(j.semester) === semesterSekarang());
+  if (jadwal.length)
+    return toast(`${kel.nama} masih terjadwal ${jadwal.length} jam di semester ini. Hapus atau alihkan dulu di Jadwal KBM.`, true);
+  konfirmasi({
+    judul: 'Nonaktifkan kelompok', tombol: 'Nonaktifkan',
+    pesan: `<b>${esc(kel.nama)}</b> tidak akan muncul lagi sebagai pilihan (tambah anggota, pindah kelompok,
+            lembar Excel, Jadwal KBM). Riwayat keanggotaan dan jadwal lamanya tetap tersimpan, dan
+            kelompok ini bisa diaktifkan lagi kapan saja.`,
+    lanjut: async () => {
+      if (MODE === 'db') { await perbarui('kelas', `id=eq.${enc(kel.id)}`, { aktif: false }); await muatSemua(); }
+      else kel.aktif = false;
+      ui.kelompokPilih = '';
+      toast(kel.nama + ' dinonaktifkan');
     }
   });
 }
@@ -2945,7 +3021,7 @@ async function terapkanPindahKelompok(perubahan, tgl) {
    SEMUA siswa yang dipilih. */
 function tujuanPindah(daftar) {
   const mapel = daftar[0].mapel;
-  return D.kelompok.filter(k => k.mapel === mapel
+  return D.kelompok.filter(k => k.mapel === mapel && k.aktif !== false
     && !(daftar.length === 1 && k.nama === daftar[0].kelompok)
     && (!k.tingkat || daftar.every(a => tingkatDari(a.rombel) === k.tingkat)));
 }
@@ -4487,7 +4563,7 @@ function wizardKenaikan() {
    Program dikenali dari nama mapel kelompoknya, sama seperti view
    v_kelompok_per_rombel: "dasar" untuk MD, "tahsin" untuk Tahsin.     */
 const PROGRAM_KELOMPOK = { md: { nama: 'MD', pola: /dasar/i }, tahsin: { nama: 'Tahsin', pola: /tahsin/i } };
-const kelompokProgram = p => D.kelompok.filter(k => PROGRAM_KELOMPOK[p].pola.test(k.mapel || ''));
+const kelompokProgram = p => D.kelompok.filter(k => k.aktif !== false && PROGRAM_KELOMPOK[p].pola.test(k.mapel || ''));
 const STATUS_KENAIKAN = { LULUS: 'lulus', PINDAH: 'pindah', KELUAR: 'keluar' };
 /* mapel_id program, untuk pengecualian (yang tidak punya kelompok). */
 function mapelProgram(p) {
