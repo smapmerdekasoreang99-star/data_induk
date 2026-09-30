@@ -2704,6 +2704,9 @@ function halKelompok() {
                            .sort((a, b) => a.siswa.localeCompare(b.siswa, 'id'));
   const kel = D.kelompok.find(k => k.nama === pilih);
   const jumlah = n => D.anggota.filter(a => a.kelompok === n).length;
+  // Pilihan untuk pindah massal; berlaku di kelompok yang sedang dibuka saja.
+  if (!ui.selKel || ui.selKelDi !== pilih) { ui.selKel = new Set(); ui.selKelDi = pilih; }
+  const terpilih = anggota.filter(a => ui.selKel.has(a.id));
 
   // dikelompokkan per mata pelajaran
   const perMapel = new Map();
@@ -2718,9 +2721,12 @@ function halKelompok() {
       <p>Pengelompokan ulang siswa untuk mata pelajaran tertentu — Tahsin dan Matematika Dasar.
          Rapornya tetap dikembalikan ke wali kelas rombel masing-masing.</p></div>
       <div class="sp"></div>
+      <button class="btn" id="bTambahKelompok">+ Tambah kelompok</button>
       ${kel ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
       <button class="btn-unduh" data-fmt="xlsx" id="bUnduhKelompok">Unduh data</button>
-      ${kel ? '<button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsenKel">Unduh absen</button>' : ''}</div>
+      ${kel ? '<button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsenKel">Unduh absen</button>' : ''}
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhPindahKel" title="Rombak kelompok MD dan Tahsin lewat Excel, mis. tiap semester">Unduh lembar pindah</button>
+      <button class="btn-unduh unggah" id="bUnggahPindahKel">Unggah lembar pindah</button></div>
 
     ${D.galat.kelompok ? `<div class="info-box"><b>Data kelompok tidak dapat dibaca.</b>
       ${esc(D.galat.kelompok)}<br>Kemungkinan berkas kelompok belajar belum dijalankan.</div>` : ''}
@@ -2746,21 +2752,27 @@ function halKelompok() {
     ${kel ? `<div class="panel">
       <div class="panel-head"><h3>${esc(kel.nama)}</h3>
         <div class="sp" style="flex:1"></div>
+        ${terpilih.length ? `<button class="btn btn-sm btn-p" id="bPindahTerpilih">Pindahkan ${terpilih.length} terpilih</button>` : ''}
         <div class="info">${anggota.length} siswa${kel.tingkat ? ' · khusus tingkat ' + kel.tingkat : ' · semua tingkat'}</div></div>
       <div class="scroll"><table><thead><tr>
+        <th style="width:34px"><input type="checkbox" class="cbx" id="cbKelAll" ${anggota.length && terpilih.length === anggota.length ? 'checked' : ''}></th>
         <th style="width:44px" class="hide-sm">No</th><th>Siswa</th>
         <th style="width:110px" class="hide-sm">NISN</th>
         <th style="width:90px">Rombel</th><th style="width:170px" class="hide-sm">Wali kelas</th>
-        <th style="width:110px"></th>
+        <th style="width:100px" class="hide-sm">Sejak</th>
+        <th style="width:170px"></th>
       </tr></thead><tbody>${
         anggota.length ? anggota.map((a, i) => `<tr data-id="${esc(a.id)}">
+          <td><input type="checkbox" class="cbx cbKel" ${ui.selKel.has(a.id) ? 'checked' : ''}></td>
           <td class="num hide-sm kecil">${i + 1}</td>
-          <td style="font-weight:500">${esc(a.siswa)}</td>
+          <td style="font-weight:500"><button class="linkish bRiwayat" title="Riwayat kelompok">${esc(a.siswa)}</button></td>
           <td class="num hide-sm">${esc(a.nisn || '—')}</td>
           <td>${a.rombel ? `<span class="tag" style="background:${warnaTingkat(tingkatDari(a.rombel))}">${esc(a.rombel)}</span>` : '<span class="kecil">—</span>'}</td>
           <td class="hide-sm kecil">${esc(a.wali_kelas || '—')}</td>
-          <td class="act"><button class="btn btn-sm btn-d bKeluar">Keluarkan</button></td></tr>`).join('')
-        : `<tr><td colspan="6"><div class="empty"><b>Belum ada anggota</b>Tambahkan lewat tombol di atas.</div></td></tr>`
+          <td class="num hide-sm kecil">${tglIndo(a.mulai)}</td>
+          <td class="act"><button class="btn btn-sm bPindah">Pindah</button>
+            <button class="btn btn-sm btn-d bKeluar">Keluarkan</button></td></tr>`).join('')
+        : `<tr><td colspan="8"><div class="empty"><b>Belum ada anggota</b>Tambahkan lewat tombol di atas.</div></td></tr>`
       }</tbody></table></div></div>` : `<div class="panel"><div class="empty">
         <b>Belum ada kelompok belajar</b>Muncul setelah kelompok dibuat dan mata pelajarannya diisi.</div></div>`}
 
@@ -2779,6 +2791,7 @@ function halKelompok() {
 
   $$('[data-kel]').forEach(b => b.onclick = () => { ui.kelompokPilih = b.dataset.kel; gambar(); });
   if ($('#bTambahAnggota')) $('#bTambahAnggota').onclick = () => formAnggota(kel);
+  $('#bTambahKelompok').onclick = formKelompok;
   if ($('#bLihatBelum')) $('#bLihatBelum').onclick = dialogBelumKelompok;
   $('#bUnduhKelompok').onclick = unduhRekapKelompok;
   if ($('#bUnduhAbsenKel')) $('#bUnduhAbsenKel').onclick = () => {
@@ -2794,12 +2807,58 @@ function halKelompok() {
       { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: pembimbing },
       new Map([[kel.nama, daftar]]), kel.mapel || '');
   };
+  $('#bUnduhPindahKel').onclick = () => unduhLembarKenaikan('kelompok');
+  $('#bUnggahPindahKel').onclick = () => pilihBerkas(unggahLembarKelompok);
+  if ($('#bPindahTerpilih')) $('#bPindahTerpilih').onclick = () => formPindahKelompok(terpilih);
+  if ($('#cbKelAll')) $('#cbKelAll').onchange = e => {
+    ui.selKel = new Set(e.target.checked ? anggota.map(a => a.id) : []);
+    gambar();
+  };
   const tb = $('tbody');
   if (tb) tb.onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
-    if (e.target.classList.contains('bKeluar'))
-      keluarkanAnggota(D.anggota.find(a => String(a.id) === tr.dataset.id));
+    const a = D.anggota.find(x => String(x.id) === tr.dataset.id);
+    if (e.target.classList.contains('cbKel')) {
+      if (e.target.checked) ui.selKel.add(a.id); else ui.selKel.delete(a.id);
+      gambar();
+    } else if (e.target.classList.contains('bKeluar')) keluarkanAnggota(a);
+    else if (e.target.classList.contains('bPindah')) formPindahKelompok([a]);
+    else if (e.target.classList.contains('bRiwayat')) riwayatKelompok(a.siswa_id, a.siswa);
   };
+}
+
+/* Kelompok belajar baru, mis. MD tingkat 11 menjelang kenaikan kelas.
+   Hanya kelompok: satuan jadwal berupa rombel tidak dibuat di sini, dan
+   database pun hanya mengizinkan jenis Kelompok ditambah dari aplikasi. */
+function formKelompok() {
+  const program = D.mapel.filter(m => /tahsin|dasar/i.test(m.nama));
+  const lain = D.mapel.filter(m => !program.includes(m));
+  formulir({
+    judul: 'Tambah kelompok belajar',
+    nilai: { tingkat: '0', mapel_id: program[0] ? program[0].id : '' },
+    kolom: [
+      { k: 'nama', label: 'Nama kelompok', wajib: true, hint: 'Contoh: MD11-1, atau Tahsin · Mahir 3' },
+      { k: 'mapel_id', label: 'Mata pelajaran', tipe: 'pilih', wajib: true,
+        opsi: [...program, ...lain].map(m => ({ v: m.id, t: m.nama })) },
+      { k: 'tingkat', label: 'Tingkat', tipe: 'pilih',
+        opsi: [{ v: '0', t: 'Semua tingkat' }, { v: '10', t: 'Kelas 10' }, { v: '11', t: 'Kelas 11' }, { v: '12', t: 'Kelas 12' }],
+        hint: 'Kelompok bertingkat hanya menerima siswa dari rombel setingkat.' }
+    ],
+    simpan: async n => {
+      const nama = n.nama.trim();
+      if (D.kelompok.some(k => k.nama.toLowerCase() === nama.toLowerCase())) throw new Error('Kelompok ' + nama + ' sudah ada.');
+      const mapel = D.mapel.find(m => m.id === n.mapel_id);
+      if (MODE === 'contoh') {
+        D.kelompok.push({ id: 'K' + Date.now(), nama, jenis: 'Kelompok', tingkat: Number(n.tingkat), mapel: mapel && mapel.nama, jam_terjadwal: 0 });
+      } else {
+        await simpanBaru('kelas', { id: 'KB' + Date.now().toString(36).toUpperCase(), nama_kelas: nama,
+                                    tingkat: Number(n.tingkat) || 0, jenis: 'Kelompok', mapel_id: n.mapel_id });
+        await muatSemua();
+      }
+      ui.kelompokPilih = nama;
+      toast('Kelompok ' + nama + ' ditambahkan');
+    }
+  });
 }
 
 function formAnggota(kel) {
@@ -2835,21 +2894,133 @@ function formAnggota(kel) {
   });
 }
 
-function keluarkanAnggota(a) {
-  if (!a) return;
-  konfirmasi({
-    judul: 'Keluarkan dari kelompok',
-    pesan: `Keluarkan <b>${esc(a.siswa)}</b> dari <b>${esc(a.kelompok)}</b>?
-            Setelah ini ia akan muncul sebagai belum masuk kelompok sampai didaftarkan
-            ke kelompok lain atau dicatat pengecualiannya.`,
-    tombol: 'Keluarkan',
-    lanjut: async () => {
-      if (MODE === 'db') await buang('anggota_kelompok', `id=eq.${enc(a.id)}`);
-      D.anggota = D.anggota.filter(x => x.id !== a.id);
+/* ---------------------------------------------- pindah kelompok bertanggal
+   Kelompok MD dan Tahsin bisa berubah kapan saja dalam tahun ajaran — di
+   tengah semester atau tiap semester. Keanggotaan tidak dihapus: baris
+   lama ditutup (aktif = false, selesai = sehari sebelum tanggal berlaku)
+   dan baris baru dibuka (mulai = tanggal berlaku), sehingga riwayatnya
+   tetap terbaca. Tanggal berlaku paling lambat hari ini.
+
+   Satu pengecualian: bila tanggal berlaku tidak sesudah tanggal mulai
+   keanggotaan lamanya, itu koreksi salah isi — barisnya diubah (atau
+   dihapus, bila berakhir) di tempat, bukan ditutup.                    */
+function tglHariIni() {
+  const t = new Date(), p = n => String(n).padStart(2, '0');
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
+}
+function sehariSebelum(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date(y, m - 1, d - 1), p = n => String(n).padStart(2, '0');
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
+}
+function periksaTanggalBerlaku(tgl) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tgl || '')) throw new Error('Tanggal berlaku wajib diisi.');
+  if (tgl > tglHariIni()) throw new Error('Tanggal berlaku paling lambat hari ini. Perombakan semester diunggah pada hari pertama semesternya.');
+  const ta = D.tahun.find(t => t.kode === sesi.ta);
+  if (ta && ta.mulai && tgl < ta.mulai) throw new Error(`Tanggal berlaku sebelum awal tahun ajaran ${sesi.ta} (${tglIndo(ta.mulai)}).`);
+}
+
+/* perubahan: [{ a: baris v_anggota_kelompok atau null, k: kelompok tujuan
+   atau null, siswa_id }]. a null = masuk kelompok baru; k null = keluar. */
+async function terapkanPindahKelompok(perubahan, tgl) {
+  if (MODE === 'contoh') { toast('Mode contoh: perpindahan tidak disimpan'); return; }
+  const koreksi = perubahan.filter(x => x.a && x.a.mulai && tgl <= x.a.mulai);
+  const biasa = perubahan.filter(x => !koreksi.includes(x));
+  for (const x of koreksi) {
+    if (x.k) await perbarui('anggota_kelompok', `id=eq.${enc(x.a.id)}`, { kelas_id: x.k.id });
+    else await buang('anggota_kelompok', `id=eq.${enc(x.a.id)}`);
+  }
+  const tutup = biasa.filter(x => x.a).map(x => x.a.id);
+  for (let i = 0; i < tutup.length; i += 100)
+    await perbarui('anggota_kelompok', `id=in.(${tutup.slice(i, i + 100).map(enc).join(',')})`,
+                   { aktif: false, selesai: sehariSebelum(tgl) });
+  const buka = biasa.filter(x => x.k).map(x => ({ siswa_id: x.siswa_id, kelas_id: x.k.id, tahun_ajaran: sesi.ta, mulai: tgl }));
+  for (let i = 0; i < buka.length; i += 200)
+    await api('/rest/v1/anggota_kelompok', { method: 'POST', headers: { Prefer: 'return=minimal' },
+                                              body: JSON.stringify(buka.slice(i, i + 200)) });
+}
+
+/* Kelompok tujuan yang sah untuk sekumpulan anggota: mapel sama, bukan
+   kelompoknya sekarang, dan — bila bertingkat — setingkat dengan rombel
+   SEMUA siswa yang dipilih. */
+function tujuanPindah(daftar) {
+  const mapel = daftar[0].mapel;
+  return D.kelompok.filter(k => k.mapel === mapel
+    && !(daftar.length === 1 && k.nama === daftar[0].kelompok)
+    && (!k.tingkat || daftar.every(a => tingkatDari(a.rombel) === k.tingkat)));
+}
+
+function formPindahKelompok(daftar) {
+  if (!daftar.length) return;
+  const tujuan = tujuanPindah(daftar);
+  const siapa = daftar.length === 1 ? daftar[0].siswa : `${daftar.length} siswa`;
+  formulir({
+    judul: `Pindah kelompok — ${siapa}`,
+    catatan: `Dari ${[...new Set(daftar.map(a => a.kelompok))].join(', ')}. Keanggotaan lama ditutup sehari sebelum tanggal berlaku; riwayatnya tetap tersimpan.`,
+    nilai: { tujuan: tujuan[0] ? tujuan[0].id : '', tgl: tglHariIni() },
+    kolom: [
+      { k: 'tujuan', label: 'Pindah ke kelompok', tipe: 'pilih', wajib: true,
+        opsi: tujuan.length ? tujuan.map(k => ({ v: k.id, t: k.nama + (k.tingkat ? ` (tingkat ${k.tingkat})` : '') }))
+                            : [{ v: '', t: '— tidak ada kelompok yang cocok —' }],
+        hint: 'Hanya kelompok dengan mata pelajaran sama dan tingkat yang cocok dengan rombel siswa.' },
+      { k: 'tgl', label: 'Berlaku mulai', tipe: 'tanggal', wajib: true, hint: 'Paling lambat hari ini.' }
+    ],
+    simpan: async n => {
+      periksaTanggalBerlaku(n.tgl);
+      const k = D.kelompok.find(x => x.id === n.tujuan);
+      if (!k) throw new Error('Pilih kelompok tujuan.');
+      await terapkanPindahKelompok(daftar.filter(a => a.kelompok !== k.nama)
+        .map(a => ({ a, k, siswa_id: a.siswa_id })), n.tgl);
+      ui.selKel = new Set();
       if (MODE === 'db') await muatSemua();
-      toast(a.siswa + ' dikeluarkan dari kelompok');
+      toast(`${siapa} pindah ke ${k.nama} mulai ${tglIndo(n.tgl)}`);
     }
   });
+}
+
+function keluarkanAnggota(a) {
+  if (!a) return;
+  formulir({
+    judul: 'Keluarkan dari kelompok — ' + a.siswa,
+    catatan: `Dari ${a.kelompok}. "Akhiri" menutup keanggotaannya dan riwayatnya tetap tersimpan. "Hapus" hanya untuk salah input — seolah ia tidak pernah menjadi anggota.`,
+    nilai: { cara: 'akhiri', tgl: tglHariIni() },
+    kolom: [
+      { k: 'cara', label: 'Cara', tipe: 'pilih', pemicu: true,
+        opsi: [{ v: 'akhiri', t: 'Akhiri keanggotaan' }, { v: 'hapus', t: 'Hapus (salah input)' }] },
+      { k: 'tgl', label: 'Tidak lagi ikut mulai', tipe: 'tanggal', wajib: true, bila: n => n.cara === 'akhiri',
+        hint: 'Paling lambat hari ini. Setelah ini ia muncul sebagai belum masuk kelompok sampai didaftarkan ke kelompok lain atau dicatat pengecualiannya.' }
+    ],
+    simpan: async n => {
+      if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
+      if (n.cara === 'hapus') await buang('anggota_kelompok', `id=eq.${enc(a.id)}`);
+      else { periksaTanggalBerlaku(n.tgl); await terapkanPindahKelompok([{ a, k: null, siswa_id: a.siswa_id }], n.tgl); }
+      await muatSemua();
+      toast(a.siswa + (n.cara === 'hapus' ? ' dihapus dari ' : ' dikeluarkan dari ') + a.kelompok);
+    }
+  });
+}
+
+/* Riwayat kelompok seorang siswa pada tahun ajaran aktif. */
+async function riwayatKelompok(siswaId, nama) {
+  let baris = [];
+  if (MODE === 'db') {
+    try {
+      baris = await ambil('anggota_kelompok',
+        `select=kelas_id,mulai,selesai,aktif&siswa_id=eq.${enc(siswaId)}&tahun_ajaran=eq.${enc(sesi.ta)}&order=mulai,dibuat_pada`);
+    } catch (e) { return toast(pesanRamah(e), true); }
+  } else {
+    baris = D.anggota.filter(a => a.siswa_id === siswaId).map(a => ({ kelas_id: (D.kelompok.find(k => k.nama === a.kelompok) || {}).id, aktif: true }));
+  }
+  const kel = id => D.kelompok.find(k => k.id === id) || { nama: id, mapel: '' };
+  bukaModal(`<h2>Riwayat kelompok — ${esc(nama)}</h2><div class="body" style="padding:0">
+    <table class="log"><thead><tr><th>Mata pelajaran</th><th>Kelompok</th><th>Mulai</th><th>Sampai</th></tr></thead>
+    <tbody>${baris.length ? baris.map(b => `<tr><td>${esc(kel(b.kelas_id).mapel || '—')}</td>
+      <td style="font-weight:${b.aktif ? 600 : 400}">${esc(kel(b.kelas_id).nama)}</td>
+      <td class="num">${tglIndo(b.mulai)}</td>
+      <td class="num">${b.aktif ? 'sekarang' : tglIndo(b.selesai)}</td></tr>`).join('')
+      : '<tr><td colspan="4"><div class="empty">Belum ada keanggotaan tahun ini.</div></td></tr>'}</tbody></table>
+    </div><div class="aksi"><button class="btn" id="m-batal">Tutup</button></div>`);
+  $('#m-batal').onclick = tutupModal;
 }
 
 function dialogBelumKelompok() {
@@ -4168,6 +4339,16 @@ function halTahun() {
           <td>${t.aktif ? '<span class="tag" style="background:var(--primary)">aktif</span>' : '<span class="kecil">arsip</span>'}</td>
           <td class="act">${t.aktif ? '' : '<button class="btn btn-sm bAktif">Jadikan aktif</button>'}</td></tr>`).join('')
       }</tbody></table></div></div>
+    <div class="panel"><div class="panel-head"><h3>Kenaikan kelas lewat Excel</h3></div>
+      <div class="panel-body">
+        <p class="msg">Rombel, kelompok MD, dan kelompok Tahsin tahun ajaran baru diatur sekaligus.
+          Unduh lembarnya, isi kolom <b>Rombel baru</b>, <b>MD baru</b>, dan <b>Tahsin baru</b> di Excel
+          (rombel baru sudah disarankan: 10 → 11, 11 → 12, kelas 12 → LULUS; bisa juga PINDAH atau KELUAR),
+          lalu unggah kembali. Perubahannya ditampilkan dulu sebelum disimpan ke tahun ajaran baru;
+          tahun berjalan tidak disentuh. Kelas 12 ditandai lulus saat tahun baru diaktifkan.
+          Kelompok MD atau Tahsin yang belum ada dibuat dulu di halaman Kelompok Belajar.</p>
+        <button class="btn-unduh" data-fmt="xlsx" id="bUnduhNaik">Unduh lembar kenaikan</button>
+        <button class="btn-unduh unggah" id="bUnggahNaik">Unggah lembar kenaikan</button></div></div>
     <div class="panel"><div class="panel-head"><h3>Cadangan data</h3></div>
       <div class="panel-body">
         <p class="msg">Unduh seluruh isi data induk menjadi satu berkas Excel berisi beberapa lembar:
@@ -4192,24 +4373,55 @@ function halTahun() {
     }
   });
   $('#bNaik').onclick = wizardKenaikan;
+  $('#bUnduhNaik').onclick = () => unduhLembarKenaikan('tahun');
+  $('#bUnggahNaik').onclick = () => pilihBerkas(unggahLembarKenaikan);
   $('tbody').onclick = e => {
     const tr = e.target.closest('tr[data-kode]'); if (!tr) return;
     if (!e.target.classList.contains('bAktif')) return;
-    const kode = tr.dataset.kode;
-    konfirmasi({
-      judul: 'Ganti tahun ajaran aktif', bahaya: false, tombol: 'Jadikan aktif',
-      pesan: `Seluruh aplikasi sekolah akan membaca tahun ajaran <b>${esc(kode)}</b> sebagai tahun berjalan.`,
-      lanjut: async () => {
-        if (MODE === 'db') {
-          await perbarui('tahun_ajaran', 'aktif=is.true', { aktif: false });
-          await perbarui('tahun_ajaran', `kode=eq.${enc(kode)}`, { aktif: true });
-          await muatSemua();
-        } else { D.tahun.forEach(t => t.aktif = t.kode === kode); sesi.ta = kode; }
-        $('#fTa').textContent = 'TA ' + sesi.ta;
-        toast('Tahun ajaran aktif: ' + kode);
-      }
-    });
+    aktivasiTahun(tr.dataset.kode);
   };
+}
+
+/* Mengaktifkan tahun ajaran. Bila tahun tujuannya SESUDAH tahun berjalan,
+   inilah saat siswa kelas 12 yang tidak punya rombel di tahun baru
+   ditandai lulus — bukan saat kenaikan diproses, supaya mereka tetap ada
+   di daftar sampai tahun lama benar-benar ditutup. Siswa kelas 10–11 yang
+   belum punya rombel di tahun baru hanya diperingatkan, tidak diubah. */
+async function aktivasiTahun(kode) {
+  let lulus = [], tertinggal = [];
+  if (MODE === 'db' && kode > sesi.ta) {
+    sibuk('Memeriksa penempatan tahun ' + kode + '…');
+    try {
+      const ada = new Set((await ambilSemua('penempatan_kelas',
+        `select=siswa_id&tahun_ajaran=eq.${enc(kode)}`)).map(p => p.siswa_id));
+      const aktif = D.siswa.filter(s => s.status === 'aktif' && s.kelas && !ada.has(s.id));
+      lulus = aktif.filter(s => tingkatDari(s.kelas) === 12);
+      tertinggal = aktif.filter(s => tingkatDari(s.kelas) !== 12);
+    } catch (e) { sibuk(''); return toast(pesanRamah(e), true); }
+    sibuk('');
+  }
+  konfirmasi({
+    judul: 'Ganti tahun ajaran aktif', bahaya: false, tombol: 'Jadikan aktif',
+    pesan: `Seluruh aplikasi sekolah akan membaca tahun ajaran <b>${esc(kode)}</b> sebagai tahun berjalan.`
+      + (lulus.length ? `<br><br><b>${lulus.length} siswa kelas 12</b> tidak punya rombel di tahun ${esc(kode)} dan akan ditandai <b>lulus</b>.` : '')
+      + (tertinggal.length ? `<br><br><b>${tertinggal.length} siswa kelas 10–11</b> belum punya rombel di tahun ${esc(kode)}.
+          Mereka tidak diubah, tetapi tidak akan terlihat di tahun baru sampai ditempatkan
+          (Data Siswa → Pindah kelas) atau statusnya diubah.` : ''),
+    daftar: tertinggal.map(s => `${s.kelas} · ${s.nama}`),
+    lanjut: async () => {
+      if (MODE === 'db') {
+        const ids = lulus.map(s => s.id);
+        for (let i = 0; i < ids.length; i += 100)
+          await perbarui('siswa', `id=in.(${ids.slice(i, i + 100).map(enc).join(',')})`,
+                         { status: 'lulus', tanggal_status: new Date().toISOString().slice(0, 10) });
+        await perbarui('tahun_ajaran', 'aktif=is.true', { aktif: false });
+        await perbarui('tahun_ajaran', `kode=eq.${enc(kode)}`, { aktif: true });
+        await muatSemua();
+      } else { D.tahun.forEach(t => t.aktif = t.kode === kode); sesi.ta = kode; }
+      $('#fTa').textContent = 'TA ' + sesi.ta;
+      toast('Tahun ajaran aktif: ' + kode);
+    }
+  });
 }
 
 function wizardKenaikan() {
@@ -4219,14 +4431,14 @@ function wizardKenaikan() {
   formulir({
     judul: 'Proses kenaikan kelas',
     lebar: true,
-    catatan: 'Data tahun berjalan tidak diubah. Yang dilakukan: membuat rombel tahun ajaran baru, memindahkan siswa kelas 10 ke 11 dan 11 ke 12 dengan nomor rombel yang sama, lalu menandai siswa kelas 12 sebagai lulus.',
+    catatan: 'Data tahun berjalan tidak diubah. Yang dilakukan: membuat rombel tahun ajaran baru dan memindahkan siswa kelas 10 ke 11 dan 11 ke 12 dengan nomor rombel yang sama. Siswa kelas 12 baru ditandai lulus saat tahun ajaran baru diaktifkan. Kelompok MD dan Tahsin tidak ikut — gunakan Kenaikan kelas lewat Excel bila ingin sekaligus.',
     nilai: { kode: '', mulai: '', selesai: '' },
     kolom: [
       { k: 'kode', label: 'Tahun ajaran baru', wajib: true, hint: `Sekarang: ${sesi.ta}. Contoh isian: 2027/2028` },
       { k: 'mulai', label: 'Mulai', tipe: 'tanggal' },
       { k: 'selesai', label: 'Selesai', tipe: 'tanggal' },
       { k: 'konfirmasi', label: 'Ketik LANJUT untuk menegaskan', wajib: true,
-        hint: `Akan diproses: ${t10} siswa naik ke kelas 11, ${t11} naik ke kelas 12, ${t12} ditandai lulus.` }
+        hint: `Akan diproses: ${t10} siswa naik ke kelas 11, ${t11} naik ke kelas 12. ${t12} siswa kelas 12 ditandai lulus saat tahun baru diaktifkan.` }
     ],
     simpan: async n => {
       if (String(n.konfirmasi).trim().toUpperCase() !== 'LANJUT') throw new Error('Pengetikan penegasan tidak cocok. Proses dibatalkan.');
@@ -4254,15 +4466,422 @@ function wizardKenaikan() {
             ({ siswa_id: s.id, rombel_id: petaRombel[s.kelas], tahun_ajaran: baru })))
         });
       }
-      const lulus = D.siswa.filter(s => s.status === 'aktif' && tingkatDari(s.kelas) === 12).map(s => s.id);
-      if (lulus.length) {
-        await perbarui('siswa', `id=in.(${lulus.map(enc).join(',')})`,
-                       { status: 'lulus', tanggal_status: new Date().toISOString().slice(0, 10) });
-      }
-      toast(`Kenaikan kelas selesai. ${naik.length} siswa dipindahkan, ${lulus.length} ditandai lulus. Aktifkan tahun ajaran ${baru} bila sudah siap.`);
+      /* Kelas 12 TIDAK ditandai lulus di sini: begitu berstatus lulus, siswa
+         hilang dari seluruh daftar tahun berjalan (absensi, nilai ekskul),
+         padahal tahun ini belum tentu selesai. Penandaannya di aktivasiTahun. */
+      toast(`Kenaikan kelas selesai. ${naik.length} siswa dipindahkan. Aktifkan tahun ajaran ${baru} bila sudah siap; kelas 12 ditandai lulus saat itu.`);
       await muatSemua();
     }
   });
+}
+
+/* ------------------------------------------- kenaikan kelas lewat Excel
+   Satu lembar per siswa aktif tahun berjalan: rombel, kelompok MD, dan
+   kelompok Tahsin sekarang, lalu kolom isian untuk tahun baru. Guru
+   mengisinya di Excel; unggahannya diperiksa seluruhnya dulu, dan hanya
+   bila tidak ada satu pun kesalahan baru disimpan ke tahun ajaran tujuan:
+   penempatan_kelas, anggota_kelompok, dan pengecualian_kelompok tahun itu.
+   Tahun berjalan tidak disentuh, dan mengunggah ulang aman — isian tahun
+   tujuan milik siswa yang ada di berkas diganti, bukan ditumpuk.
+
+   Program dikenali dari nama mapel kelompoknya, sama seperti view
+   v_kelompok_per_rombel: "dasar" untuk MD, "tahsin" untuk Tahsin.     */
+const PROGRAM_KELOMPOK = { md: { nama: 'MD', pola: /dasar/i }, tahsin: { nama: 'Tahsin', pola: /tahsin/i } };
+const kelompokProgram = p => D.kelompok.filter(k => PROGRAM_KELOMPOK[p].pola.test(k.mapel || ''));
+const STATUS_KENAIKAN = { LULUS: 'lulus', PINDAH: 'pindah', KELUAR: 'keluar' };
+/* mapel_id program, untuk pengecualian (yang tidak punya kelompok). */
+function mapelProgram(p) {
+  const k = kelompokProgram(p)[0];
+  const m = k && D.mapel.find(x => x.nama === k.mapel);
+  if (!m) throw new Error(`Mata pelajaran ${PROGRAM_KELOMPOK[p].nama} tidak ditemukan, jadi alasan tidak ikut belum bisa dicatat.`);
+  return m.id;
+}
+
+function saranRombelBaru(kode) {
+  const t = tingkatDari(kode);
+  if (t === 12) return 'LULUS';
+  if (t === 10 || t === 11) return (t + 1) + '-' + String(kode).split('-').slice(1).join('-');
+  return '';
+}
+function tahunBerikut(kode) {
+  const m = String(kode).match(/^(\d{4})\/(\d{4})$/);
+  return m ? `${Number(m[1]) + 1}/${Number(m[2]) + 1}` : '';
+}
+
+/* mode 'tahun'    : kenaikan kelas ke tahun ajaran baru (ada kolom Rombel baru).
+   mode 'kelompok' : pindah kelompok di tahun berjalan — tanpa kolom rombel,
+                     dan MD/Tahsin baru terisi keanggotaan sekarang. */
+async function unduhLembarKenaikan(mode = 'tahun') {
+  const kelompokSaja = mode === 'kelompok';
+  const siswa = D.siswa.filter(s => s.status === 'aktif' && s.kelas)
+    .sort((a, b) => a.kelas.localeCompare(b.kelas, 'id', { numeric: true }) || a.nama.localeCompare(b.nama, 'id'));
+  if (!siswa.length) return toast('Belum ada siswa aktif yang ditempatkan di rombel.', true);
+  const kelompokSiswa = (id, p) => (D.anggota.find(a => a.siswa_id === id
+    && PROGRAM_KELOMPOK[p].pola.test(a.mapel || '')) || {}).kelompok || '';
+  const alasan = (nisn, p) => (nisn && (D.dikecualikan.find(x => x.nisn === nisn
+    && PROGRAM_KELOMPOK[p].pola.test(x.program || '')) || {}).alasan) || '';
+
+  await jalankan('Menyiapkan lembar kenaikan…', async () => {
+    const ExcelJS = await muatExcelJS();
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Kenaikan');
+    const kolom = [
+      ['ID Siswa', 38], ['NISN', 13], ['Nama', 32], ['L/P', 5],
+      [`Rombel ${sesi.ta}`, 12], ['MD sekarang', 14], ['Tahsin sekarang', 22],
+      ...(kelompokSaja ? [] : [['Rombel baru', 12]]), ['MD baru', 14], ['Tahsin baru', 22],
+      ['Alasan tidak ikut MD', 26], ['Alasan tidak ikut Tahsin', 26]
+    ];
+    const ISIAN = 8;   // kolom ke-8 dst. diisi guru
+    const kMd = kelompokSaja ? 8 : 9;   // letak kolom MD baru; Tahsin baru tepat sesudahnya
+    ws.columns = kolom.map(([, w]) => ({ width: w }));
+    ws.getCell('A1').value = kelompokSaja
+      ? `LEMBAR PINDAH KELOMPOK MD DAN TAHSIN — tahun ajaran ${sesi.ta}`
+      : `LEMBAR KENAIKAN KELAS — dari tahun ajaran ${sesi.ta} ke ${tahunBerikut(sesi.ta) || 'tahun berikutnya'}`;
+    ws.getCell('A1').font = { bold: true, size: 13 };
+    ws.getCell('A2').value = 'Isi hanya kolom berwarna kuning. '
+      + (kelompokSaja ? 'Ubah hanya siswa yang pindah kelompok; baris yang tidak diubah dibiarkan. '
+                      : 'Rombel baru: kode rombel (mis. 11-1), atau LULUS, PINDAH, KELUAR. ')
+      + 'MD baru dan Tahsin baru: nama kelompok persis seperti di lembar Pilihan; kosongkan bila tidak ikut dan tulis alasannya. '
+      + 'Jangan mengubah kolom ID Siswa.';
+    ws.getCell('A2').alignment = { wrapText: true, vertical: 'top' };
+    ws.mergeCells(2, 1, 2, kolom.length);
+    ws.getRow(2).height = 32;
+
+    const BARIS_JUDUL = 4;
+    const judul = ws.getRow(BARIS_JUDUL);
+    kolom.forEach(([t], i) => {
+      const c = judul.getCell(i + 1);
+      c.value = t;
+      c.font = { bold: true, size: 10.5, color: { argb: TEKS_KEPALA_XLSX } };
+      c.fill = i + 1 >= ISIAN ? { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3D98B' } } : ISI_KEPALA_XLSX;
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+    });
+    judul.height = 30;
+
+    // Lembar Pilihan: daftar isian yang sah, juga sumber daftar tarik-turun.
+    const wp = wb.addWorksheet('Pilihan');
+    const md = kelompokProgram('md'), tahsin = kelompokProgram('tahsin');
+    const rombelSaran = [...new Set(siswa.map(s => saranRombelBaru(s.kelas)).filter(k => k && !STATUS_KENAIKAN[k]))]
+      .sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+    const rombelPilihan = [...rombelSaran, ...Object.keys(STATUS_KENAIKAN)];
+    wp.columns = [{ width: 16 }, { width: 18 }, { width: 10 }, { width: 26 }, { width: 10 }];
+    wp.getRow(1).values = ['Rombel baru', 'Kelompok MD', 'Tingkat', 'Kelompok Tahsin', 'Tingkat'];
+    wp.getRow(1).font = { bold: true };
+    const tk = k => k.tingkat ? String(k.tingkat) : 'semua';
+    for (let i = 0; i < Math.max(rombelPilihan.length, md.length, tahsin.length); i++) {
+      wp.getRow(i + 2).values = [rombelPilihan[i] || '', md[i] ? md[i].nama : '', md[i] ? tk(md[i]) : '',
+                                 tahsin[i] ? tahsin[i].nama : '', tahsin[i] ? tk(tahsin[i]) : ''];
+    }
+    const catatanBaris = Math.max(rombelPilihan.length, md.length, tahsin.length) + 3;
+    wp.getCell(`A${catatanBaris}`).value = 'Rombel baru boleh kode lain yang belum ada di daftar (mis. 11-7); rombelnya dibuat saat diunggah. '
+      + 'Kelompok dengan tingkat tertentu hanya menerima siswa yang rombel barunya setingkat.';
+    const daftar = (kol, n) => n ? [`Pilihan!$${kol}$2:$${kol}$${n + 1}`] : null;
+    const validasi = (rumus, bebas) => rumus && ({ type: 'list', allowBlank: true, formulae: rumus,
+      showErrorMessage: true, errorStyle: bebas ? 'warning' : 'stop',
+      errorTitle: 'Isian tidak dikenal', error: bebas
+        ? 'Kode ini tidak ada di daftar. Tetap pakai bila memang rombel baru.'
+        : 'Pilih nama kelompok dari daftar (lembar Pilihan), atau kosongkan.' });
+    const vRombel = validasi(daftar('A', rombelPilihan.length), true);
+    const vMd = validasi(daftar('B', md.length)), vTahsin = validasi(daftar('D', tahsin.length));
+
+    siswa.forEach((s, i) => {
+      const rb = kelompokSaja ? '' : saranRombelBaru(s.kelas);
+      const keluar = !!STATUS_KENAIKAN[rb];
+      const br = ws.getRow(BARIS_JUDUL + 1 + i);
+      const md = kelompokSiswa(s.id, 'md'), th = kelompokSiswa(s.id, 'tahsin');
+      br.values = [s.id, s.nisn, s.nama, s.jk, s.kelas, md, th,
+                   ...(kelompokSaja ? [] : [rb]),
+                   kelompokSaja ? md : '', keluar ? '' : th,
+                   kelompokSaja ? alasan(s.nisn, 'md') : '', keluar ? '' : alasan(s.nisn, 'tahsin')];
+      br.getCell(2).numFmt = '@';
+      br.eachCell({ includeEmpty: true }, (c, n) => {
+        c.font = { size: 10, color: n === 1 ? { argb: 'FF9AA8AD' } : undefined };
+        c.border = { top: { style: 'hair', color: { argb: 'FFD6DEDC' } }, bottom: { style: 'hair', color: { argb: 'FFD6DEDC' } },
+                     left: { style: 'hair', color: { argb: 'FFD6DEDC' } }, right: { style: 'hair', color: { argb: 'FFD6DEDC' } } };
+        if (n >= ISIAN) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF8DC' } };
+      });
+      if (vRombel && !kelompokSaja) br.getCell(8).dataValidation = vRombel;
+      if (vMd) br.getCell(kMd).dataValidation = vMd;
+      if (vTahsin) br.getCell(kMd + 1).dataValidation = vTahsin;
+    });
+    ws.views = [{ state: 'frozen', ySplit: BARIS_JUDUL, xSplit: 3 }];
+    ws.autoFilter = { from: { row: BARIS_JUDUL, column: 1 }, to: { row: BARIS_JUDUL + siswa.length, column: kolom.length } };
+
+    const buf = await wb.xlsx.writeBuffer();
+    unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+              `${kelompokSaja ? 'Pindah_Kelompok' : 'Kenaikan_Kelas'}_${sesi.ta.replace('/', '-')}_${stempel()}.xlsx`);
+    toast(`${siswa.length} siswa diunduh`);
+  });
+}
+
+function unggahLembarKenaikan(matrix, namaBerkas) {
+  matrix = cariBarisJudul(matrix);
+  const kepala = matrix[0].map(normal);
+  const kol = k => kepala.indexOf(k);
+  const idx = { id: kol('idsiswa'), nisn: kol('nisn'), nama: kol('nama'), rombel: kol('rombelbaru'),
+                md: kol('mdbaru'), tahsin: kol('tahsinbaru'),
+                alasanMd: kol('alasantidakikutmd'), alasanTahsin: kol('alasantidakikuttahsin') };
+  if (idx.rombel < 0 && idx.md >= 0)
+    return toast('Ini lembar pindah kelompok. Unggah di halaman Kelompok Belajar.', true);
+  if (idx.rombel < 0 || idx.nama < 0)
+    return toast('Kolom "Nama" dan "Rombel baru" tidak ditemukan. Pakai berkas dari tombol Unduh lembar kenaikan.', true);
+  const amb = (r, i) => i < 0 ? '' : String(r[i] == null ? '' : r[i]).trim();
+
+  const galat = [], catatan = [], baris = [], dilihat = new Set();
+  const cariKelompok = (p, nama) => kelompokProgram(p).find(k => k.nama.trim().toLowerCase() === nama.toLowerCase());
+  for (let i = 1; i < matrix.length; i++) {
+    const r = matrix[i];
+    const nama = amb(r, idx.nama), id = amb(r, idx.id), nisn = amb(r, idx.nisn).replace(/\s/g, '');
+    if (!nama && !id) continue;
+    const label = nama || id;
+    const s = D.siswa.find(x => id && x.id === id) || D.siswa.find(x => nisn && x.nisn === nisn);
+    if (!s) { galat.push(`${label}: siswa tidak ditemukan. Kolom ID Siswa/NISN jangan diubah.`); continue; }
+    if (dilihat.has(s.id)) { galat.push(`${label}: ${s.nama} muncul lebih dari sekali.`); continue; }
+    dilihat.add(s.id);
+    if (s.status !== 'aktif') { catatan.push(`${s.nama} berstatus ${s.status}, dilewati.`); continue; }
+
+    const isianRombel = amb(r, idx.rombel).replace(/\s+/g, '');
+    const status = STATUS_KENAIKAN[isianRombel.toUpperCase()];
+    const o = { s, rombel: '', status: '', md: null, tahsin: null, alasanMd: amb(r, idx.alasanMd), alasanTahsin: amb(r, idx.alasanTahsin) };
+    if (!isianRombel) { galat.push(`${label}: Rombel baru kosong.`); continue; }
+    if (status) {
+      if (status === 'lulus' && tingkatDari(s.kelas) !== 12) { galat.push(`${label}: hanya siswa kelas 12 yang bisa LULUS (sekarang ${s.kelas}).`); continue; }
+      o.status = status;
+      baris.push(o);
+      continue;
+    }
+    if (!/^(10|11|12)-[A-Za-z0-9]+$/.test(isianRombel)) { galat.push(`${label}: Rombel baru "${isianRombel}" tidak dikenal. Tulis seperti 11-1, atau LULUS/PINDAH/KELUAR.`); continue; }
+    o.rombel = isianRombel;
+    const tingkat = tingkatDari(isianRombel);
+    let salah = false;
+    for (const p of ['md', 'tahsin']) {
+      const isian = amb(r, idx[p]);
+      const alasanIni = p === 'md' ? o.alasanMd : o.alasanTahsin;
+      const nm = PROGRAM_KELOMPOK[p].nama;
+      if (!isian) continue;
+      const k = cariKelompok(p, isian);
+      if (!k) { galat.push(`${label}: kelompok ${nm} "${isian}" tidak ada. Buat dulu di Kelompok Belajar, atau pilih dari lembar Pilihan.`); salah = true; continue; }
+      if (k.tingkat && k.tingkat !== tingkat) { galat.push(`${label}: ${k.nama} untuk tingkat ${k.tingkat}, sedangkan rombel barunya ${isianRombel}.`); salah = true; continue; }
+      if (alasanIni) { galat.push(`${label}: ${nm} diisi kelompok sekaligus alasan tidak ikut — pilih salah satu.`); salah = true; continue; }
+      o[p] = k;
+    }
+    if (!salah) baris.push(o);
+  }
+  const tidakAda = D.siswa.filter(s => s.status === 'aktif' && s.kelas && !dilihat.has(s.id));
+  if (tidakAda.length) catatan.push(`${tidakAda.length} siswa aktif tidak ada di berkas dan tidak diproses (mis. ${tidakAda.slice(0, 3).map(s => s.nama).join(', ')}).`);
+  const tanpaProgram = p => baris.filter(o => o.rombel && !o[p] && !(p === 'md' ? o.alasanMd : o.alasanTahsin)).length;
+  ['md', 'tahsin'].forEach(p => {
+    const n = tanpaProgram(p);
+    if (n) catatan.push(`${n} siswa tanpa kelompok ${PROGRAM_KELOMPOK[p].nama} dan tanpa alasan — akan muncul sebagai "belum masuk kelompok" di tahun baru.`);
+  });
+  if (!baris.length && !galat.length) return toast('Tidak ada baris siswa yang terbaca.', true);
+  pratinjauKenaikan({ baris, galat, catatan, namaBerkas });
+}
+
+function pratinjauKenaikan({ baris, galat, catatan, namaBerkas }) {
+  const naik = baris.filter(o => o.rombel);
+  const perRombel = new Map();
+  naik.forEach(o => perRombel.set(o.rombel, (perRombel.get(o.rombel) || 0) + 1));
+  const hitung = st => baris.filter(o => o.status === st).length;
+  const jml = p => naik.filter(o => o[p]).length;
+  const kecuali = p => naik.filter(o => !o[p] && (p === 'md' ? o.alasanMd : o.alasanTahsin)).length;
+  const bawaan = D.tahun.find(t => !t.aktif && t.kode > sesi.ta);
+  const tujuanAwal = bawaan ? bawaan.kode : tahunBerikut(sesi.ta);
+  const li = a => a.map(x => `<li>${esc(x)}</li>`).join('');
+
+  bukaModal(`<h2>Unggah lembar kenaikan</h2><div class="body">
+    <p class="msg kecil"><b>${esc(namaBerkas || '')}</b> · ${baris.length} siswa terbaca.</p>
+    ${galat.length ? `<div class="info-box"><b>${galat.length} kesalahan — belum ada yang disimpan.</b>
+      Perbaiki di Excel lalu unggah lagi.<ul class="list">${li(galat.slice(0, 40))}
+      ${galat.length > 40 ? `<li>… dan ${galat.length - 40} lainnya</li>` : ''}</ul></div>` : ''}
+    <div class="fg"><label>Simpan ke tahun ajaran</label>
+      <input class="field" id="kTujuan" value="${esc(tujuanAwal)}" list="kDaftarTa" autocomplete="off">
+      <datalist id="kDaftarTa">${D.tahun.filter(t => !t.aktif).map(t => `<option value="${esc(t.kode)}">`).join('')}</datalist>
+      <div class="hint">Tahun berjalan ${esc(sesi.ta)} tidak diubah. Tahun tujuan dibuat bila belum ada, dan tetap belum aktif.</div></div>
+    <ul class="list">
+      <li><b>${naik.length}</b> siswa ditempatkan di <b>${perRombel.size}</b> rombel:
+        ${[...perRombel].sort((a, b) => a[0].localeCompare(b[0], 'id', { numeric: true })).map(([k, n]) => `${esc(k)} (${n})`).join(', ') || '—'}</li>
+      <li><b>${hitung('lulus')}</b> LULUS — ditandai lulus saat tahun tujuan diaktifkan</li>
+      <li><b>${hitung('pindah') + hitung('keluar')}</b> PINDAH/KELUAR — statusnya <b>langsung</b> diubah saat disimpan</li>
+      <li>MD: <b>${jml('md')}</b> anggota, ${kecuali('md')} dikecualikan · Tahsin: <b>${jml('tahsin')}</b> anggota, ${kecuali('tahsin')} dikecualikan</li>
+    </ul>
+    ${catatan.length ? `<p class="msg kecil">${catatan.map(esc).join('<br>')}</p>` : ''}
+    <p class="msg kecil">Isian tahun tujuan milik siswa di berkas ini (rombel, kelompok, pengecualian) diganti dengan isi berkas.</p>
+    </div><div class="aksi"><button class="btn" id="m-batal">Batal</button>
+    <button class="btn btn-p" id="m-simpan" ${galat.length ? 'disabled' : ''}>Simpan ${baris.length} siswa</button></div>`, true);
+  $('#m-batal').onclick = tutupModal;
+  $('#m-simpan').onclick = () => {
+    const tujuan = $('#kTujuan').value.trim();
+    if (!/^\d{4}\/\d{4}$/.test(tujuan) || tujuan <= sesi.ta)
+      return toast(`Tahun ajaran tujuan harus ditulis seperti 2027/2028 dan sesudah ${sesi.ta}.`, true);
+    tutupModal();
+    jalankan('Menyimpan kenaikan kelas…', () => simpanKenaikan(baris, tujuan));
+  };
+}
+
+async function simpanKenaikan(baris, ta) {
+  if (MODE === 'contoh') { toast('Mode contoh: kenaikan tidak disimpan'); return; }
+  const kirim = (jalur, isi, prefer) => api(jalur, { method: 'POST',
+    headers: { Prefer: prefer || 'return=minimal' }, body: JSON.stringify(isi) });
+  const perPotong = async (daftar, n, fn) => { for (let i = 0; i < daftar.length; i += n) await fn(daftar.slice(i, i + n), i); };
+  const dalam = ids => `siswa_id=in.(${ids.map(enc).join(',')})`;
+
+  if (!D.tahun.some(t => t.kode === ta)) await simpanBaru('tahun_ajaran', { kode: ta, aktif: false });
+
+  // 1. Rombel tahun tujuan
+  const naik = baris.filter(o => o.rombel);
+  const kodeRombel = [...new Set(naik.map(o => o.rombel))];
+  const idRombelTujuan = {};
+  if (kodeRombel.length) {
+    const d = await kirim('/rest/v1/rombel?on_conflict=kode,tahun_ajaran',
+      kodeRombel.map(kode => ({ kode, tingkat: tingkatDari(kode), tahun_ajaran: ta })),
+      'resolution=merge-duplicates,return=representation');
+    d.forEach(r => { idRombelTujuan[r.kode] = r.id; });
+  }
+
+  // 2. Kosongkan isian tahun tujuan milik siswa di berkas (unggah ulang = ganti)
+  const semuaId = baris.map(o => o.s.id);
+  await perPotong(semuaId, 100, async ids => {
+    sibuk('Membersihkan isian lama tahun ' + ta + '…');
+    await buang('pengecualian_kelompok', `${dalam(ids)}&tahun_ajaran=eq.${enc(ta)}`);
+    await buang('anggota_kelompok', `${dalam(ids)}&tahun_ajaran=eq.${enc(ta)}`);
+    const keluar = ids.filter(id => baris.find(o => o.s.id === id).status);
+    if (keluar.length) await buang('penempatan_kelas', `${dalam(keluar)}&tahun_ajaran=eq.${enc(ta)}`);
+  });
+
+  // 3. Penempatan rombel
+  await perPotong(naik, 200, async (p, i) => {
+    sibuk(`Menempatkan siswa ${i + 1}–${i + p.length} dari ${naik.length}…`);
+    await kirim('/rest/v1/penempatan_kelas?on_conflict=siswa_id,tahun_ajaran',
+      p.map(o => ({ siswa_id: o.s.id, rombel_id: idRombelTujuan[o.rombel], tahun_ajaran: ta })),
+      'resolution=merge-duplicates');
+  });
+
+  // 4. Kelompok MD dan Tahsin (mapel_id diisi pemicu dari kelompoknya),
+  //    mulai sejak awal tahun tujuan bila tanggalnya tercatat.
+  const mulaiTa = (D.tahun.find(t => t.kode === ta) || {}).mulai;
+  const anggota = naik.flatMap(o => ['md', 'tahsin'].filter(p => o[p])
+    .map(p => ({ siswa_id: o.s.id, kelas_id: o[p].id, tahun_ajaran: ta, ...(mulaiTa ? { mulai: mulaiTa } : {}) })));
+  await perPotong(anggota, 200, async (p, i) => {
+    sibuk(`Mendaftarkan kelompok ${i + 1}–${i + p.length} dari ${anggota.length}…`);
+    await kirim('/rest/v1/anggota_kelompok', p);
+  });
+
+  // 5. Pengecualian (yang tidak ikut, beralasan)
+  const kecuali = [];
+  for (const p of ['md', 'tahsin']) {
+    const daftar = naik.filter(o => !o[p] && (p === 'md' ? o.alasanMd : o.alasanTahsin));
+    if (!daftar.length) continue;
+    const mapel_id = mapelProgram(p);
+    daftar.forEach(o => kecuali.push({ siswa_id: o.s.id, mapel_id, tahun_ajaran: ta,
+      alasan: p === 'md' ? o.alasanMd : o.alasanTahsin, dicatat_oleh: sesi.petugas || null }));
+  }
+  await perPotong(kecuali, 200, p => kirim('/rest/v1/pengecualian_kelompok', p));
+
+  // 6. PINDAH / KELUAR berlaku sekarang; LULUS menunggu aktivasi tahun tujuan.
+  const hariIni = new Date().toISOString().slice(0, 10);
+  for (const st of ['pindah', 'keluar']) {
+    const ids = baris.filter(o => o.status === st).map(o => o.s.id);
+    await perPotong(ids, 100, p => perbarui('siswa', `id=in.(${p.map(enc).join(',')})`,
+                                              { status: st, tanggal_status: hariIni }));
+  }
+
+  await muatSemua();
+  toast(`Kenaikan ke ${ta} tersimpan: ${naik.length} siswa, ${anggota.length} keanggotaan kelompok, ${kecuali.length} pengecualian. Aktifkan tahun ${ta} bila sudah siap.`);
+}
+
+/* Lembar pindah kelompok (tahun berjalan): hanya baris yang berbeda dari
+   keadaan sekarang yang diproses, berlaku mulai satu tanggal untuk semua.
+   Per siswa per program:
+     kelompok diisi, beda dari sekarang   → pindah / masuk (pengecualiannya dihapus)
+     kosong + alasan                      → keluar bila ada, pengecualian dicatat/diubah
+     kosong tanpa alasan                  → keluar bila ada, pengecualian dihapus bila ada */
+function unggahLembarKelompok(matrix, namaBerkas) {
+  matrix = cariBarisJudul(matrix);
+  const kepala = matrix[0].map(normal);
+  const kol = k => kepala.indexOf(k);
+  const idx = { id: kol('idsiswa'), nisn: kol('nisn'), nama: kol('nama'), rombel: kol('rombelbaru'),
+                md: kol('mdbaru'), tahsin: kol('tahsinbaru'),
+                alasanMd: kol('alasantidakikutmd'), alasanTahsin: kol('alasantidakikuttahsin') };
+  if (idx.rombel >= 0) return toast('Ini lembar kenaikan kelas. Unggah di halaman Tahun Ajaran.', true);
+  if (idx.nama < 0 || idx.md < 0 || idx.tahsin < 0)
+    return toast('Kolom "MD baru" dan "Tahsin baru" tidak ditemukan. Pakai berkas dari tombol Unduh lembar pindah.', true);
+  const amb = (r, i) => i < 0 ? '' : String(r[i] == null ? '' : r[i]).trim();
+
+  const galat = [], ubah = [], dilihat = new Set();
+  for (let i = 1; i < matrix.length; i++) {
+    const r = matrix[i];
+    const nama = amb(r, idx.nama), id = amb(r, idx.id), nisn = amb(r, idx.nisn).replace(/\s/g, '');
+    if (!nama && !id) continue;
+    const s = D.siswa.find(x => id && x.id === id) || D.siswa.find(x => nisn && x.nisn === nisn);
+    if (!s) { galat.push(`${nama || id}: siswa tidak ditemukan. Kolom ID Siswa/NISN jangan diubah.`); continue; }
+    if (dilihat.has(s.id)) { galat.push(`${s.nama}: muncul lebih dari sekali.`); continue; }
+    dilihat.add(s.id);
+    if (s.status !== 'aktif' || !s.kelas) continue;
+    for (const p of ['md', 'tahsin']) {
+      const nm = PROGRAM_KELOMPOK[p].nama, pola = PROGRAM_KELOMPOK[p].pola;
+      const isian = amb(r, idx[p]), alasanIni = amb(r, p === 'md' ? idx.alasanMd : idx.alasanTahsin);
+      const a = D.anggota.find(x => x.siswa_id === s.id && pola.test(x.mapel || '')) || null;
+      const x = (s.nisn && D.dikecualikan.find(y => y.nisn === s.nisn && pola.test(y.program || ''))) || null;
+      let k = null;
+      if (isian) {
+        k = kelompokProgram(p).find(y => y.nama.trim().toLowerCase() === isian.toLowerCase());
+        if (!k) { galat.push(`${s.nama}: kelompok ${nm} "${isian}" tidak ada.`); continue; }
+        if (k.tingkat && k.tingkat !== tingkatDari(s.kelas)) { galat.push(`${s.nama}: ${k.nama} untuk tingkat ${k.tingkat}, sedangkan rombelnya ${s.kelas}.`); continue; }
+        if (alasanIni) { galat.push(`${s.nama}: ${nm} diisi kelompok sekaligus alasan tidak ikut — pilih salah satu.`); continue; }
+      }
+      const kelompokBerubah = (a ? a.kelompok : '') !== (k ? k.nama : '');
+      const alasanBerubah = (x ? x.alasan : '') !== alasanIni;
+      if (!kelompokBerubah && !alasanBerubah) continue;
+      ubah.push({ s, p, a, k, x, alasan: alasanIni, kelompokBerubah, alasanBerubah });
+    }
+  }
+  if (!ubah.length && !galat.length) return toast('Tidak ada perubahan kelompok di berkas ini.');
+
+  const uraian = u => `${u.s.nama} (${u.s.kelas}) · ${PROGRAM_KELOMPOK[u.p].nama}: `
+    + (u.kelompokBerubah ? `${u.a ? u.a.kelompok : '—'} → ${u.k ? u.k.nama : 'tidak ikut'}` : 'kelompok tetap')
+    + (u.alasan && u.alasanBerubah ? ` (alasan: ${u.alasan})` : '')
+    + (!u.alasan && u.x ? ' (pengecualian dihapus)' : '');
+  const li = a => a.map(t => `<li>${esc(t)}</li>`).join('');
+  bukaModal(`<h2>Unggah lembar pindah kelompok</h2><div class="body">
+    <p class="msg kecil"><b>${esc(namaBerkas || '')}</b> · ${ubah.length} perubahan.</p>
+    ${galat.length ? `<div class="info-box"><b>${galat.length} kesalahan — belum ada yang disimpan.</b>
+      Perbaiki di Excel lalu unggah lagi.<ul class="list">${li(galat.slice(0, 40))}
+      ${galat.length > 40 ? `<li>… dan ${galat.length - 40} lainnya</li>` : ''}</ul></div>` : ''}
+    <div class="fg"><label>Berlaku mulai</label>
+      <input class="field" type="date" id="kBerlaku" value="${tglHariIni()}" max="${tglHariIni()}">
+      <div class="hint">Paling lambat hari ini. Keanggotaan lama ditutup sehari sebelumnya; riwayatnya tetap tersimpan.</div></div>
+    <ul class="list">${li(ubah.slice(0, 60).map(uraian))}${ubah.length > 60 ? `<li>… dan ${ubah.length - 60} lainnya</li>` : ''}</ul>
+    </div><div class="aksi"><button class="btn" id="m-batal">Batal</button>
+    <button class="btn btn-p" id="m-simpan" ${galat.length || !ubah.length ? 'disabled' : ''}>Simpan ${ubah.length} perubahan</button></div>`, true);
+  $('#m-batal').onclick = tutupModal;
+  $('#m-simpan').onclick = () => {
+    const tgl = $('#kBerlaku').value;
+    try { periksaTanggalBerlaku(tgl); } catch (e) { return toast(e.message, true); }
+    tutupModal();
+    jalankan('Menyimpan perpindahan kelompok…', () => simpanPindahKelompok(ubah, tgl));
+  };
+}
+
+async function simpanPindahKelompok(ubah, tgl) {
+  if (MODE === 'contoh') { toast('Mode contoh: perpindahan tidak disimpan'); return; }
+  const hapusKecuali = u => buang('pengecualian_kelompok',
+    `siswa_id=eq.${enc(u.s.id)}&mapel_id=eq.${enc(mapelProgram(u.p))}&tahun_ajaran=eq.${enc(sesi.ta)}`);
+  // 1. Pengecualian lama yang tidak berlaku lagi dihapus dulu, supaya
+  //    pemicu tidak menolak keanggotaan baru.
+  for (const u of ubah.filter(u => u.x && u.alasanBerubah)) await hapusKecuali(u);
+  // 2. Tutup / buka keanggotaan.
+  await terapkanPindahKelompok(ubah.filter(u => u.kelompokBerubah)
+    .map(u => ({ a: u.a, k: u.k, siswa_id: u.s.id })), tgl);
+  // 3. Pengecualian baru — sesudah keanggotaannya ditutup.
+  const baru = ubah.filter(u => u.alasan && u.alasanBerubah).map(u => ({
+    siswa_id: u.s.id, mapel_id: mapelProgram(u.p), tahun_ajaran: sesi.ta,
+    alasan: u.alasan, dicatat_oleh: sesi.petugas || null }));
+  if (baru.length) await api('/rest/v1/pengecualian_kelompok', { method: 'POST',
+    headers: { Prefer: 'return=minimal' }, body: JSON.stringify(baru) });
+  await muatSemua();
+  toast(`${ubah.length} perubahan kelompok tersimpan, berlaku mulai ${tglIndo(tgl)}.`);
 }
 
 /* ------------------------------------------------------- pilih massal */

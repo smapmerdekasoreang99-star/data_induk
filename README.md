@@ -178,8 +178,47 @@ drop view kg_mapel, kg_kelas, kg_jadwal_kbm, kg_jam_pelajaran, kg_piket;
 
 ## 3. Yang rutin dikerjakan
 
-**Tiap awal tahun ajaran** — Tahun Ajaran → tambah tahun baru → Proses kenaikan
-kelas → aktifkan tahun barunya. Data tahun lama tetap terbaca.
+**Tiap awal tahun ajaran** — dua cara, keduanya tidak mengubah data tahun lama:
+
+- **Kenaikan kelas lewat Excel** (Tahun Ajaran → Unduh lembar kenaikan): rombel,
+  kelompok MD, dan kelompok Tahsin tahun baru diatur sekaligus. Lembarnya berisi
+  siswa aktif dengan rombel dan kelompoknya sekarang, serta kolom kuning untuk
+  diisi guru: Rombel baru (sudah disarankan 10 → 11, 11 → 12, 12 → LULUS; bisa
+  juga PINDAH atau KELUAR), MD baru, Tahsin baru, dan alasan tidak ikut. Tahsin
+  dan alasannya disalin dari tahun berjalan; MD dikosongkan karena kelompoknya
+  per tingkat. Setelah diunggah, seluruh isian diperiksa dulu (kelompok harus
+  ada dan setingkat dengan rombel barunya, tidak boleh berisi kelompok sekaligus
+  alasan). Satu kesalahan saja membuat tidak ada yang disimpan. Yang lolos
+  disimpan ke tahun tujuan, yaitu `penempatan_kelas`, `anggota_kelompok`, dan
+  `pengecualian_kelompok`. Unggah ulang mengganti isian tahun tujuan, tidak
+  menumpuk. PINDAH/KELUAR langsung berlaku.
+- **Proses kenaikan kelas** (tombol): hanya rombel, 10 → 11 dan 11 → 12 dengan
+  nomor yang sama; kelompok belajar diisi sendiri sesudahnya.
+
+Lalu **Jadikan aktif** tahun barunya. Saat itulah siswa kelas 12 yang tidak
+punya rombel di tahun baru ditandai lulus — bukan saat kenaikan diproses,
+supaya mereka tetap ada di absensi dan nilai sampai tahun lama ditutup. Siswa
+kelas 10–11 yang belum punya rombel hanya diperingatkan. Kelompok MD atau Tahsin
+yang belum ada (mis. MD tingkat 11) dibuat di Kelompok Belajar → Tambah kelompok.
+Halaman Kelompok Belajar hanya menampilkan keanggotaan tahun ajaran aktif.
+
+**Pindah kelompok MD/Tahsin di tengah tahun** — tidak menunggu tahun ajaran
+baru; bisa di tengah semester atau tiap semester. Di Kelompok Belajar:
+
+- **Pindah** (per siswa) atau centang beberapa siswa → **Pindahkan terpilih**:
+  pilih kelompok tujuan dan tanggal berlaku.
+- **Keluarkan**: *Akhiri keanggotaan* mulai tanggal tertentu, atau *Hapus*
+  hanya untuk salah input.
+- **Rombak per semester lewat Excel**: Unduh lembar pindah → ubah kolom MD
+  baru / Tahsin baru / alasan tidak ikut → Unggah lembar pindah → pilih tanggal
+  berlaku. Hanya baris yang berbeda dari keadaan sekarang yang diproses.
+
+Keanggotaan tidak dihapus: yang lama ditutup sehari sebelum tanggal berlaku
+(`aktif` = false, `selesai`), yang baru dibuka dengan `mulai` = tanggal berlaku.
+Klik nama siswa untuk melihat riwayatnya. Tanggal berlaku paling lambat hari
+ini, jadi perombakan semester diunggah pada hari pertama semesternya. Bila
+tanggal berlaku tidak sesudah tanggal mulai keanggotaan lamanya, itu dianggap
+koreksi salah isi dan barisnya diubah di tempat.
 
 **Mutasi masuk** — Data Siswa → Tambah siswa → tempatkan di rombel → daftarkan
 ke kelompok belajar.
@@ -204,23 +243,3 @@ Supabase versi gratis tidak menyediakan pemulihan otomatis.
   penyambung `kg_*` dihapus
 - Sisa akses anon pada tabel induk belum ditutup seluruhnya
 - Aplikasi payroll tersendiri, dikerjakan setelah data induk mapan
-- **Kenaikan kelas lewat Excel** (dicatat 30 September 2026, dikerjakan
-  sebelum kenaikan kelas berikutnya). Tombol kenaikan kelas hanya
-  memindahkan rombel; kelompok MD dan Tahsin mulai kosong di tahun baru.
-  Rencananya diproses sekaligus:
-  1. Unduh daftar siswa tahun berjalan: rombel, kelompok MD, kelompok
-     Tahsin, pengecualian.
-  2. Guru/wali kelas mengisi kolom rombel, MD, dan Tahsin tahun baru di
-     Excel (termasuk tinggal kelas dan lulus).
-  3. Unggah kembali → pratinjau perubahan → disimpan ke tahun ajaran baru
-     (`penempatan_kelas`, `anggota_kelompok`, `pengecualian_kelompok`),
-     tahun lama tidak disentuh.
-
-  Perbaikan yang harus ikut: `v_anggota_kelompok`, `v_kelompok_per_rombel`
-  (sumber `v_siswa_belum_berkelompok`), dan `v_pengecualian` belum
-  menyaring tahun ajaran aktif. Akibatnya setelah kenaikan, anggota tahun
-  lalu ikut tampil, siswa terhitung dua kali di "belum masuk kelompok", dan
-  formulir Tambah anggota menyembunyikan siswa yang tahun lalu sudah
-  berkelompok. Kelompok MD dibentuk per tingkat, jadi kelompok MD kelas 11
-  perlu dibuat bila MD berlanjut; penandaan lulus kelas 12 sebaiknya
-  ditunda sampai tahun baru diaktifkan.
