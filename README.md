@@ -204,3 +204,23 @@ Supabase versi gratis tidak menyediakan pemulihan otomatis.
   penyambung `kg_*` dihapus
 - Sisa akses anon pada tabel induk belum ditutup seluruhnya
 - Aplikasi payroll tersendiri, dikerjakan setelah data induk mapan
+- **Kenaikan kelas lewat Excel** (dicatat 30 September 2026, dikerjakan
+  sebelum kenaikan kelas berikutnya). Tombol kenaikan kelas hanya
+  memindahkan rombel; kelompok MD dan Tahsin mulai kosong di tahun baru.
+  Rencananya diproses sekaligus:
+  1. Unduh daftar siswa tahun berjalan: rombel, kelompok MD, kelompok
+     Tahsin, pengecualian.
+  2. Guru/wali kelas mengisi kolom rombel, MD, dan Tahsin tahun baru di
+     Excel (termasuk tinggal kelas dan lulus).
+  3. Unggah kembali → pratinjau perubahan → disimpan ke tahun ajaran baru
+     (`penempatan_kelas`, `anggota_kelompok`, `pengecualian_kelompok`),
+     tahun lama tidak disentuh.
+
+  Perbaikan yang harus ikut: `v_anggota_kelompok`, `v_kelompok_per_rombel`
+  (sumber `v_siswa_belum_berkelompok`), dan `v_pengecualian` belum
+  menyaring tahun ajaran aktif. Akibatnya setelah kenaikan, anggota tahun
+  lalu ikut tampil, siswa terhitung dua kali di "belum masuk kelompok", dan
+  formulir Tambah anggota menyembunyikan siswa yang tahun lalu sudah
+  berkelompok. Kelompok MD dibentuk per tingkat, jadi kelompok MD kelas 11
+  perlu dibuat bila MD berlanjut; penandaan lulus kelas 12 sebaiknya
+  ditunda sampai tahun baru diaktifkan.
