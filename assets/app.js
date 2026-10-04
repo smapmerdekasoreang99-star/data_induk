@@ -139,10 +139,27 @@ const ambil = (tabel, query = '') => api(`/rest/v1/${tabel}?${query}`);
    hilang justru bagian akhir, sehingga terlihat seperti data yang
    memang belum ada. Dipakai untuk seluruh tabel yang bisa melewati
    seribu baris. */
+/* Halaman demi halaman HARUS berurutan pasti (4 Oktober 2026). Tanpa
+   order=, PostgreSQL bebas menyusun ulang barisnya di tiap permintaan, dan
+   view seperti v_jadwal hanya diurutkan kelas, hari, jam — baris semester 1
+   dan 2, atau dua guru satu kelompok, bernilai sama. Akibatnya di batas
+   seribu baris ada yang ganda dan ada yang hilang, diam-diam. Untuk view,
+   urutannya sama dengan ORDER BY view itu (jadi urutan di layar tidak
+   berubah) ditambah kunci unik sebagai pemecah seri; tabel tanpa urutan
+   bawaan memakai id. Query yang sudah menyebut order= dibiarkan (pastikan
+   berakhir dengan kunci unik). */
+const URUT_UNIK = {
+  v_jadwal: 'kelas,hari,jam_ke,id',                     // view: nama_kelas, hari, jam_ke
+  v_anggota_kelompok: 'mapel,kelompok,siswa,id',        // view: nama_mapel, nama_kelas, nama siswa
+  v_siswa_belum_berkelompok: 'rombel,siswa,siswa_id',   // view: rombel, siswa
+  v_jadwal_piket: 'hari,jam_ke,guru,id',                // view: hari, jam_ke, nama guru
+  jam_kerja_guru: 'guru_id,hari'                        // kunci utama
+};
 async function ambilSemua(tabel, query = '') {
+  const urut = /(^|&)order=/.test(query) ? '' : `order=${URUT_UNIK[tabel] || 'id'}&`;
   let hasil = [], offset = 0;
   for (;;) {
-    const d = await ambil(tabel, `${query}${query ? '&' : ''}limit=1000&offset=${offset}`);
+    const d = await ambil(tabel, `${query}${query ? '&' : ''}${urut}limit=1000&offset=${offset}`);
     if (!d || !d.length) break;
     hasil = hasil.concat(d);
     if (d.length < 1000) break;
@@ -281,7 +298,8 @@ async function muatSiswa() {
   let semua = [], offset = 0;
   for (;;) {
     const d = await ambil('siswa',
-      `select=${enc(pilih)}&penempatan_kelas.tahun_ajaran=eq.${enc(sesi.ta)}&order=nama&limit=1000&offset=${offset}`);
+      // order=nama,id: nama tidak unik — id memastikan urutan antarhalaman tetap.
+      `select=${enc(pilih)}&penempatan_kelas.tahun_ajaran=eq.${enc(sesi.ta)}&order=nama,id&limit=1000&offset=${offset}`);
     semua = semua.concat(d);
     if (d.length < 1000) break;
     offset += 1000;
@@ -4511,12 +4529,12 @@ async function aktivasiTahun(kode) {
     daftar: tertinggal.map(s => `${s.kelas} · ${s.nama}`),
     lanjut: async () => {
       if (MODE === 'db') {
-        const ids = lulus.map(s => s.id);
-        for (let i = 0; i < ids.length; i += 100)
-          await perbarui('siswa', `id=in.(${ids.slice(i, i + 100).map(enc).join(',')})`,
-                         { status: 'lulus', tanggal_status: new Date().toISOString().slice(0, 10) });
-        await perbarui('tahun_ajaran', 'aktif=is.true', { aktif: false });
-        await perbarui('tahun_ajaran', `kode=eq.${enc(kode)}`, { aktif: true });
+        // Satu transaksi di database (aktifkan_tahun_ajaran, 4 Oktober 2026):
+        // tandai lulus, nonaktifkan tahun lama, aktifkan tahun baru — berhasil
+        // bersama atau gagal bersama. Dulu tiga permintaan terpisah; putus di
+        // tengah berarti tidak ada tahun aktif dan semua aplikasi membaca kosong.
+        await api('/rest/v1/rpc/aktifkan_tahun_ajaran', { method: 'POST',
+          body: JSON.stringify({ p_kode: kode, p_lulus: lulus.map(s => s.id) }) });
         await muatSemua();
       } else { D.tahun.forEach(t => t.aktif = t.kode === kode); sesi.ta = kode; }
       $('#fTa').textContent = 'TA ' + sesi.ta;
