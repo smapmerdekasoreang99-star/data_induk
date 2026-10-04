@@ -113,26 +113,84 @@ const tingkatDari = kode => {
 };
 
 /* ------------------------------------------------------------ database */
-async function api(jalur, opsi = {}) {
-  const r = await fetch(KONFIG.url + jalur, {
-    ...opsi,
-    cache: 'no-store',   // data selalu segar dari server, tidak pernah dari cache peramban
-    headers: {
-      apikey: KONFIG.anonKey,
-      Authorization: 'Bearer ' + (sesi.token || KONFIG.anonKey),
-      'Content-Type': 'application/json',
-      'x-petugas': sesi.petugas || '',
-      ...(opsi.headers || {})
-    }
-  });
-  const teks = await r.text();
+/* Jaringan sekolah sering lambat atau putus-sambung (4 Oktober 2026).
+   Permintaan yang macet tidak boleh menahan layar "Memuat…" selamanya: ia
+   dihentikan setelah batas waktu. Pembacaan (GET) dicoba sekali lagi bila
+   sambungan putus, habis waktu, atau server sibuk. Penyimpanan TIDAK
+   diulang otomatis — bisa saja sudah tersimpan walaupun jawabannya tidak
+   sampai. Token akses (berumur satu jam) diperbarui sendiri lewat token
+   penyegar yang hanya disimpan di memori, supaya petugas tidak dikeluarkan
+   di tengah pekerjaan. */
+const BATAS_BACA = 45000, BATAS_TULIS = 90000;
+const jeda = ms => new Promise(s => setTimeout(s, ms));
+
+async function api(jalur, opsi = {}, percobaan = 0) {
+  if (sesi.segar && sesi.habis && Date.now() > sesi.habis - 60000) {
+    try { await segarkanSesi(); } catch (e) { sesiBerakhir(); throw new Error('Sesi berakhir'); }
+  }
+  const baca = !opsi.method || opsi.method === 'GET';
+  const henti = new AbortController();
+  const jam = setTimeout(() => henti.abort(), baca ? BATAS_BACA : BATAS_TULIS);
+  let r, teks;
+  try {
+    r = await fetch(KONFIG.url + jalur, {
+      ...opsi,
+      signal: henti.signal,
+      cache: 'no-store',   // data selalu segar dari server, tidak pernah dari cache peramban
+      headers: {
+        apikey: KONFIG.anonKey,
+        Authorization: 'Bearer ' + (sesi.token || KONFIG.anonKey),
+        'Content-Type': 'application/json',
+        'x-petugas': sesi.petugas || '',
+        ...(opsi.headers || {})
+      }
+    });
+    teks = await r.text();
+  } catch (e) {
+    if (baca && percobaan < 1) { await jeda(1500); return api(jalur, opsi, percobaan + 1); }
+    const habis = e && e.name === 'AbortError';
+    throw new Error(baca
+      ? (habis ? 'Server terlalu lama menjawab.' : 'Sambungan internet terputus.') + ' Periksa jaringan lalu coba lagi.'
+      : (habis ? 'Server terlalu lama menjawab saat menyimpan.' : 'Sambungan terputus saat menyimpan.')
+        + ' Perubahan mungkin sudah tersimpan — muat ulang halaman ini dan periksa sebelum mengulang.');
+  } finally { clearTimeout(jam); }
   let data = null;
   try { data = teks ? JSON.parse(teks) : null; } catch (e) {}
-  if (r.status === 401) { sesi.token = ''; layarMasuk('Sesi berakhir. Silakan masuk kembali.'); throw new Error('Sesi berakhir'); }
+  if (r.status === 401) {
+    // Ditolak sebelum dijalankan, jadi aman diulang sekali sesudah token baru.
+    if (sesi.segar && percobaan < 1 && await segarkanSesi().then(() => true, () => false))
+      return api(jalur, opsi, percobaan + 1);
+    sesiBerakhir();
+    throw new Error('Sesi berakhir');
+  }
+  if (baca && percobaan < 1 && [502, 503, 504].includes(r.status)) { await jeda(1500); return api(jalur, opsi, percobaan + 1); }
   if (!r.ok) throw new Error((data && (data.message || data.hint || data.error_description)) || `Gagal (HTTP ${r.status})`);
   return data;
 }
 const ambil = (tabel, query = '') => api(`/rest/v1/${tabel}?${query}`);
+function sesiBerakhir() {
+  sesi.token = ''; sesi.segar = ''; sesi.habis = 0;
+  layarMasuk('Sesi berakhir. Silakan masuk kembali.');
+}
+function simpanToken(d) {
+  sesi.token = d.access_token;
+  sesi.segar = d.refresh_token || '';
+  sesi.habis = Date.now() + (Number(d.expires_in) || 3600) * 1000;
+}
+// Satu penyegaran untuk semua permintaan yang menunggu bersamaan — token penyegar Supabase sekali pakai.
+let penyegaran = null;
+function segarkanSesi() {
+  if (!penyegaran) penyegaran = (async () => {
+    const r = await fetch(KONFIG.url + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST', headers: { apikey: KONFIG.anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: sesi.segar })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.access_token) throw new Error('Sesi berakhir');
+    simpanToken(d);
+  })().finally(() => { penyegaran = null; });
+  return penyegaran;
+}
 
 /* PostgREST membatasi setiap permintaan pada 1.000 baris. Tanpa
    pengambilan bertahap, tabel besar terpotong diam-diam — dan yang
@@ -173,6 +231,20 @@ const simpanBaru = (tabel, isi, tambahan = '') =>
 const perbarui = (tabel, syarat, isi) =>
   api(`/rest/v1/${tabel}?${syarat}`, { method: 'PATCH', body: JSON.stringify(isi) });
 const buang = (tabel, syarat) => api(`/rest/v1/${tabel}?${syarat}`, { method: 'DELETE' });
+/* Penyimpanan berlangkah banyak dikirim sekaligus ke di_tulis (4 Oktober
+   2026): satu transaksi, satu permintaan. Bila sambungan putus di tengah,
+   tidak ada yang tersimpan — bukan keanggotaan lama sudah tertutup sementara
+   yang baru belum terbuka. Langkahnya sama dan berurutan seperti dulu dikirim
+   satu per satu. Syarat ubah/hapus selalu "kolom sama dengan nilai"; ubah
+   yang tidak mengenai baris mana pun membatalkan seluruhnya (data usang). */
+const langkah = {
+  tambah: (tabel, isi) => ({ tabel, aksi: 'tambah', isi }),
+  ubah:   (tabel, syarat, isi) => ({ tabel, aksi: 'ubah', syarat, isi }),
+  hapus:  (tabel, syarat) => ({ tabel, aksi: 'hapus', syarat })
+};
+const tulisBersama = daftar => daftar.length
+  ? api('/rest/v1/rpc/di_tulis', { method: 'POST', body: JSON.stringify({ p_langkah: daftar }) })
+  : Promise.resolve(0);
 
 async function masuk(petugas, sandi) {
   const r = await fetch(KONFIG.url + '/auth/v1/token?grant_type=password', {
@@ -182,7 +254,7 @@ async function masuk(petugas, sandi) {
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error_description || d.msg || 'Kata sandi salah.');
-  sesi.token = d.access_token;
+  simpanToken(d);
   sesi.petugas = petugas;
 }
 
@@ -191,59 +263,77 @@ async function muatSemua() {
   if (MODE === 'contoh') { dataContoh(); return; }
   D.galat = {};
 
+  // Tahun ajaran lebih dulu: hampir semua bacaan lain disaring dengannya.
   const tahun = await ambil('tahun_ajaran', 'select=kode,mulai,selesai,aktif&order=kode.desc');
   D.tahun = tahun || [];
   const aktif = D.tahun.find(t => t.aktif);
   if (aktif) sesi.ta = aktif.kode;
 
-  const [guru, rombel, mapel, tugas, jabatan, jenis] = await Promise.all([
+  /* Selebihnya SATU gelombang serentak (4 Oktober 2026). Dulu ±15 tahap
+     berurutan — BPJS, lalu piket, parkiran, jam kerja, piket unit, penanda
+     tangan, profil, jadwal, kelompok, siswa, satu per satu — sehingga masuk
+     dan setiap muat ulang sesudah menyimpan menunggu ±17–20 perjalanan
+     jaringan (6–16 detik di jaringan sekolah). Sekarang ±3–4.
+     Bagian pelengkap tetap gagal sendiri-sendiri seperti dulu: yang gagal
+     kosong dan dicatat di konsol / D.galat, halaman lain tetap tampil. */
+  const pelengkap = (janji, bawaan, nama) =>
+    janji.catch(e => { console.warn(nama + ' belum ada:', e.message); return bawaan; });
+  const bagian = janji => janji.catch(e => ({ galat: e }));
+  const ta = enc(sesi.ta);
+  const [guru, rombel, mapel, tugas, jabatan, jenis, bpjs, piket, piketJadwal, parkiran, jamKerja,
+         piketUnit, ttd, profil, jadwal, kelompok, siswaMentah] = await Promise.all([
     ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc'),
-    ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}&order=kode`),
+    ambil('rombel', `select=id,kode,tingkat,tahun_ajaran&tahun_ajaran=eq.${ta}&order=kode`),
     ambil('mapel', 'select=id,nama_mapel,rumpun_mapel&order=nama_mapel'),
-    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,honor_mengajar,kelompok_tarif,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${enc(sesi.ta)}`),
+    ambilSemua('guru_tugas', `select=id,guru_id,jenis,rombel_id,jabatan,jam_tambahan_mengajar,jam_piket_unit,jam_piket,pola_honor,sumber_hadir,honor_mengajar,kelompok_tarif,keterangan,mulai,selesai,aktif,tahun_ajaran&tahun_ajaran=eq.${ta}`),
     ambil('jabatan', 'select=nama,kategori,aktif&order=urutan'),
-    ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true')
-  ]);
-  D.guru = guru || []; D.rombel = rombel || [];
-  // Kelayakan TuSehat dan TuKerja, dihitung database; gagal = tanpa tanda.
-  await muatBpjs();
-
-  // Rekap piket dibaca dari view, bukan disimpulkan sendiri.
-  // Sumber kebenaran piket adalah jadwal piket (tabel piket).
-  try {
-    D.piket = await ambil('v_guru_piket', 'select=*');
-    try { D.piketJadwal = await ambilSemua('v_jadwal_piket', 'select=*'); }
-    catch (e) { D.piketJadwal = []; console.warn('v_jadwal_piket belum ada:', e.message); }
+    ambil('jenis_tugas', 'select=nama,perlu_rombel,perlu_jabatan,piket_sekolah,piket_libur,tambah_jam_mengajar,jam_unit,hak_transport,penjelasan&order=urutan&aktif=is.true'),
+    // Kelayakan TuSehat dan TuKerja, dihitung database; gagal = tanpa tanda.
+    pelengkap(ambil('v_guru_bpjs', 'select=*'), [], 'v_guru_bpjs'),
+    // Rekap piket dibaca dari view, bukan disimpulkan sendiri.
+    // Sumber kebenaran piket adalah jadwal piket (tabel piket).
+    bagian(ambil('v_guru_piket', 'select=*')),
+    pelengkap(ambilSemua('v_jadwal_piket', 'select=*'), [], 'v_jadwal_piket'),
     // Roster parkiran ditulis dari halaman ini, jadi kegagalannya tidak
     // boleh menjatuhkan seluruh halaman piket.
-    try { D.parkiran = await ambil('v_piket_parkiran', 'select=*&order=urutan_hari'); }
-    catch (e) { D.parkiran = []; console.warn('v_piket_parkiran belum ada:', e.message); }
+    pelengkap(ambil('v_piket_parkiran', 'select=*&order=urutan_hari'), [], 'v_piket_parkiran'),
     // Ketentuan jam kerja staf; ditulis dari halaman Jam Kerja Staf.
-    try {
-      [D.jamKerja, D.jamKerjaGuru] = await Promise.all([
-        ambil('jam_kerja', 'select=*&order=urutan'), ambilSemua('jam_kerja_guru', 'select=*')]);
-    } catch (e) { D.jamKerja = []; D.jamKerjaGuru = []; console.warn('jam_kerja belum ada:', e.message); }
-    try { D.piketUnit = await ambilSemua('v_jadwal_piket_unit', 'select=*'); }
-    catch (e) { D.piketUnit = []; console.warn('v_jadwal_piket_unit belum ada:', e.message); }
+    pelengkap(Promise.all([ambil('jam_kerja', 'select=*&order=urutan'), ambilSemua('jam_kerja_guru', 'select=*')]),
+              [[], []], 'jam_kerja'),
+    pelengkap(ambilSemua('v_jadwal_piket_unit', 'select=*'), [], 'v_jadwal_piket_unit'),
     // Penanda tangan dokumen, diturunkan dari jabatan aktif di guru_tugas.
-    try { D.ttd = (await ambil('v_penanda_tangan', 'select=*&limit=1'))[0] || {}; }
-    catch (e) { D.ttd = {}; console.warn('v_penanda_tangan belum ada:', e.message); }
-  } catch (e) {
-    D.profil = { id:1, nama_sekolah:'SMA Plus "Merdeka" Soreang',
-    alamat:'Jl. Citaliktik-Sindang Wargi Soreang Kab. Bandung', kota:'Soreang',
-    npsn:'', kepala_sekolah:'Mohamad Gunawan, S.Si', nip_kepala:'', logo_url:'assets/logo.png' };
-  SEKOLAH = { nama:D.profil.nama_sekolah, alamat:D.profil.alamat, kota:D.profil.kota,
-              kepala:D.profil.kepala_sekolah, nip:'', npsn:'', catatan:'', logo:D.profil.logo_url };
+    pelengkap(ambil('v_penanda_tangan', 'select=*&limit=1').then(d => (d || [])[0] || {}), {}, 'v_penanda_tangan'),
+    // Profil dokumen untuk kop berkas cetak.
+    bagian(ambil('profil_dokumen', 'select=*&limit=1')),
+    // Jadwal KBM beserta daftar jam pelajarannya. Hanya tahun ajaran aktif:
+    // jadwal_kbm menyimpan semua tahun, dan tanpa saringan ini jadwal tahun
+    // lalu ikut tergambar dan terhitung.
+    bagian(Promise.all([ambilSemua('v_jadwal', 'select=*&tahun_ajaran=eq.' + ta),
+                        ambil('jam_pelajaran', 'select=*&order=jam_ke')])),
+    // Kelompok belajar: Tahsin, Matematika Dasar, dan sejenisnya.
+    bagian(Promise.all([ambil('v_satuan_jadwal', 'select=*&jenis=eq.Kelompok&order=mapel,nama'),
+                        ambilSemua('v_anggota_kelompok', 'select=*'),
+                        ambilSemua('v_siswa_belum_berkelompok', 'select=*'),
+                        ambil('v_pengecualian', 'select=*')])),
+    ambilSiswaMentah()
+  ]);
+  D.guru = guru || []; D.rombel = rombel || [];
+  D.bpjs = bpjs;
 
-  D.piket = [];
-    D.galat.piket = e.message;
-    console.warn('View piket/komponen belum tersedia:', e.message);
-  }
+  if (piket && piket.galat) {
+    D.piket = [];
+    D.galat.piket = piket.galat.message;
+    console.warn('View piket/komponen belum tersedia:', piket.galat.message);
+  } else D.piket = piket || [];
+  D.piketJadwal = piketJadwal; D.parkiran = parkiran;
+  [D.jamKerja, D.jamKerjaGuru] = jamKerja;
+  D.piketUnit = piketUnit; D.ttd = ttd;
 
-  // Profil dokumen untuk kop berkas cetak.
-  try {
-    const pr = await ambil('profil_dokumen', 'select=*&limit=1');
-    D.profil = (pr && pr[0]) || null;
+  if (profil && profil.galat) {
+    D.profil = null; D.galat.profil = profil.galat.message;
+    SEKOLAH = { ...SEKOLAH_BAWAAN };
+  } else {
+    D.profil = (profil && profil[0]) || null;
     if (D.profil) SEKOLAH = {
       nama:   D.profil.nama_sekolah || SEKOLAH_BAWAAN.nama,
       alamat: D.profil.alamat       || '',
@@ -254,57 +344,39 @@ async function muatSemua() {
       catatan: D.profil.catatan_kaki || '',
       logo:   D.profil.logo_url     || SEKOLAH_BAWAAN.logo
     };
-  } catch (e) {
-    D.profil = null; D.galat.profil = e.message;
-    SEKOLAH = { ...SEKOLAH_BAWAAN };
   }
 
-  // Jadwal KBM beserta daftar jam pelajarannya.
-  try {
-    [D.jadwal, D.jamPel] = await Promise.all([
-      // Hanya tahun ajaran aktif: jadwal_kbm menyimpan semua tahun, dan
-      // tanpa saringan ini jadwal tahun lalu ikut tergambar dan terhitung.
-      ambilSemua('v_jadwal', 'select=*&tahun_ajaran=eq.' + enc(sesi.ta)),
-      ambil('jam_pelajaran', 'select=*&order=jam_ke')
-    ]);
-  } catch (e) {
+  if (jadwal && jadwal.galat) {
     D.jadwal = []; D.jamPel = [];
-    D.galat.jadwal = e.message;
-    console.warn('View jadwal belum tersedia:', e.message);
-  }
+    D.galat.jadwal = jadwal.galat.message;
+    console.warn('View jadwal belum tersedia:', jadwal.galat.message);
+  } else [D.jadwal, D.jamPel] = jadwal;
 
-  // Kelompok belajar: Tahsin, Matematika Dasar, dan sejenisnya.
-  try {
-    [D.kelompok, D.anggota, D.belumKelompok, D.dikecualikan] = await Promise.all([
-      ambil('v_satuan_jadwal', 'select=*&jenis=eq.Kelompok&order=mapel,nama'),
-      ambilSemua('v_anggota_kelompok', 'select=*'),
-      ambilSemua('v_siswa_belum_berkelompok', 'select=*'),
-      ambil('v_pengecualian', 'select=*')
-    ]);
-  } catch (e) {
+  if (kelompok && kelompok.galat) {
     D.kelompok = []; D.anggota = []; D.belumKelompok = []; D.dikecualikan = [];
-    D.galat.kelompok = e.message;
-    console.warn('View kelompok belajar belum tersedia:', e.message);
-  }
+    D.galat.kelompok = kelompok.galat.message;
+    console.warn('View kelompok belajar belum tersedia:', kelompok.galat.message);
+  } else [D.kelompok, D.anggota, D.belumKelompok, D.dikecualikan] = kelompok;
+
   D.mapel = (mapel || []).map(m => ({ id: m.id, nama: m.nama_mapel, rumpun: m.rumpun_mapel }));
   D.tugas = tugas || []; D.jabatan = jabatan || []; D.jenis = jenis || [];
 
-  await muatSiswa();
+  petakanSiswa(siswaMentah);
 }
 
 async function muatSiswa() {
   if (MODE === 'contoh') return;
+  petakanSiswa(await ambilSiswaMentah());
+}
+// Siswa beserta penempatannya di tahun ajaran aktif, berhalaman.
+function ambilSiswaMentah() {
   const pilih = 'id,nisn,nis,nama,jenis_kelamin,tanggal_lahir,status,penempatan_kelas(rombel_id,tahun_ajaran)';
-  let semua = [], offset = 0;
-  for (;;) {
-    const d = await ambil('siswa',
-      // order=nama,id: nama tidak unik — id memastikan urutan antarhalaman tetap.
-      `select=${enc(pilih)}&penempatan_kelas.tahun_ajaran=eq.${enc(sesi.ta)}&order=nama,id&limit=1000&offset=${offset}`);
-    semua = semua.concat(d);
-    if (d.length < 1000) break;
-    offset += 1000;
-  }
-  D.siswa = semua.map(s => {
+  // order=nama,id: nama tidak unik — id memastikan urutan antarhalaman tetap.
+  return ambilSemua('siswa', `select=${enc(pilih)}&penempatan_kelas.tahun_ajaran=eq.${enc(sesi.ta)}&order=nama,id`);
+}
+// Memerlukan D.rombel tahun aktif sudah termuat.
+function petakanSiswa(semua) {
+  D.siswa = (semua || []).map(s => {
     const p = (s.penempatan_kelas || [])[0];
     const r = p && D.rombel.find(x => x.id === p.rombel_id);
     return { id: s.id, nisn: s.nisn || '', nis: s.nis || '', nama: s.nama || '',
@@ -572,14 +644,17 @@ function layarMasuk(pesan) {
     <div class="fg"><label>Kata sandi</label><input class="field" id="g-sandi" type="password"></div>
     <button class="btn btn-p btn-blok" id="g-masuk">Masuk</button>
     <p class="note">Nama petugas dicatat pada setiap perubahan data.</p></div></div>`;
+  let sedangMasuk = false;   // Enter yang ditekan berulang tidak memuat semuanya dua kali
   const coba = async () => {
+    if (sedangMasuk) return;
     const nama = $('#g-nama').value.trim(), sandi = $('#g-sandi').value;
     if (!nama) return $('#g-nama').focus();
     if (!sandi) return $('#g-sandi').focus();
+    sedangMasuk = true;
     sibuk('Memeriksa…');
     try { await masuk(nama, sandi); await muatSemua(); layarUtama(); toast('Selamat bekerja, ' + nama); }
     catch (e) { layarMasuk(e.message); }
-    finally { sibuk(''); }
+    finally { sibuk(''); sedangMasuk = false; }
   };
   $('#g-masuk').onclick = coba;
   ['#g-nama', '#g-sandi'].forEach(s => $(s).onkeydown = e => { if (e.key === 'Enter') coba(); });
@@ -591,9 +666,18 @@ function layarUtama() {
   $('#layar').appendChild($('#tpl-utama').content.cloneNode(true));
   $('#fPetugas').textContent = MODE === 'contoh' ? 'Mode contoh' : sesi.petugas;
   $('#fTa').textContent = 'TA ' + sesi.ta;
-  $('#bKeluar').onclick = () => {
-    sesi.token = ''; sesi.petugas = '';
-    if (MODE === 'db') layarMasuk(); else toast('Mode contoh tidak memakai login');
+  /* Keluar mencabut sesi di server (token penyegarnya tidak bisa dipakai
+     lagi), lalu memuat ulang halaman supaya data siswa dan guru yang sudah
+     dimuat tidak tertinggal di memori tab — komputer sekolah dipakai bersama. */
+  $('#bKeluar').onclick = async () => {
+    if (MODE !== 'db') return toast('Mode contoh tidak memakai login');
+    sibuk('Keluar…');
+    try {
+      await fetch(KONFIG.url + '/auth/v1/logout', { method: 'POST', signal: AbortSignal.timeout(5000),
+        headers: { apikey: KONFIG.anonKey, Authorization: 'Bearer ' + sesi.token } });
+    } catch (e) { /* tetap keluar walau server tidak terjangkau */ }
+    sesi.token = ''; sesi.segar = ''; sesi.petugas = '';
+    location.reload();
   };
   $$('#nav button').forEach(b => b.onclick = () => {
     halaman = b.dataset.hal; sel.clear();
@@ -660,12 +744,6 @@ function siswaTersaring() {
 }
 
 function halSiswa() {
-  const data = siswaTersaring();
-  const maxHal = Math.max(1, Math.ceil(data.length / ui.ukuran));
-  if (ui.hal > maxHal) ui.hal = maxHal;
-  const mulai = (ui.hal - 1) * ui.ukuran;
-  const laman = data.slice(mulai, mulai + ui.ukuran);
-
   $('#isi').innerHTML = `
     <div class="head"><div><h1>Data Siswa</h1><p>${D.siswa.length} siswa terdaftar pada tahun ajaran ${esc(sesi.ta)}.</p></div>
       <div class="sp"></div>
@@ -685,6 +763,45 @@ function halSiswa() {
       <button class="chip ${ui.kelasSiswa === '' ? 'on' : ''}" data-kelas="">Semua kelas</button>
       ${D.rombel.map(r => `<button class="chip ${ui.kelasSiswa === r.kode ? 'on' : ''}" data-kelas="${esc(r.kode)}">${esc(r.kode)}<span class="c">${D.siswa.filter(s => s.kelas === r.kode && s.status === 'aktif').length}</span></button>`).join('')}
     </div>
+    <div id="panelSiswa"></div>`;
+
+  // Pencarian hanya menggambar ulang tabelnya (gambarPanelSiswa), bukan seluruh
+  // halaman: kotak pencariannya tidak diganti, jadi fokus dan keyboard HP
+  // tidak hilang setiap jeda mengetik (4 Oktober 2026).
+  $('#q').oninput = e => { clearTimeout(window._q); window._q = setTimeout(() => { ui.qSiswa = e.target.value; ui.hal = 1; gambarPanelSiswa(); }, 200); };
+  $('#fStatus').onchange = e => { ui.statusSiswa = e.target.value; ui.hal = 1; gambar(); };
+  $('#fUkuran').onchange = e => { ui.ukuran = +e.target.value; ui.hal = 1; gambar(); };
+  $$('[data-kelas]').forEach(b => b.onclick = () => { ui.kelasSiswa = b.dataset.kelas; ui.hal = 1; gambar(); });
+  $('#bTambah').onclick = () => formSiswa(null);
+  $('#bUnggah').onclick = () => pilihBerkas(m => imporSiswa(m));
+  $('#bUnduhAbsen').onclick = () => {
+    const per = new Map();
+    siswaTersaring().filter(x => x.status === 'aktif').forEach(x => {
+      const k = x.kelas || '(tanpa kelas)';
+      if (!per.has(k)) per.set(k, []);
+      per.get(k).push(x);
+    });
+    [...per.values()].forEach(a => a.sort((x, y) => x.nama.localeCompare(y.nama, 'id')));
+    // Wali kelas diambil dari tugas guru bila rombelnya tunggal.
+    const kelasTerpilih = [...per.keys()];
+    const wali = kelasTerpilih.length === 1 ? namaWali(kelasTerpilih[0]) : '';
+    unduhAbsenXlsx('Daftar Hadir Tatap Muka',
+      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: wali },
+      new Map([...per.entries()].sort()), '');
+  };
+  $('#bUnduh').onclick = () => unduhTabel('Daftar Siswa', kolomSiswa(), siswaTersaring(),
+    `Tahun Pelajaran ${sesi.ta}` + (ui.kelasSiswa ? `  ·  Kelas ${ui.kelasSiswa}` : ''));
+  gambarPanelSiswa();
+}
+
+// Tabel siswa (bergantung pada pencarian, saringan, dan halaman) beserta ikatannya.
+function gambarPanelSiswa() {
+  const data = siswaTersaring();
+  const maxHal = Math.max(1, Math.ceil(data.length / ui.ukuran));
+  if (ui.hal > maxHal) ui.hal = maxHal;
+  const mulai = (ui.hal - 1) * ui.ukuran;
+  const laman = data.slice(mulai, mulai + ui.ukuran);
+  $('#panelSiswa').innerHTML = `
     <div class="panel">
       <div class="panel-head"><div class="info">${data.length === D.siswa.length ? data.length + ' siswa' : data.length + ' dari ' + D.siswa.length + ' siswa'}</div></div>
       <div class="scroll"><table><thead><tr>
@@ -711,33 +828,9 @@ function halSiswa() {
       <div class="foot"><div class="info">${data.length ? `Menampilkan ${mulai + 1}–${Math.min(mulai + ui.ukuran, data.length)} dari ${data.length}` : '—'}</div>
         <div class="sp" style="flex:1"></div><div class="pg" id="pg"></div></div>
     </div>`;
-
   pasangPager(maxHal, n => { ui.hal = n; gambar(); });
-  $('#q').oninput = e => { clearTimeout(window._q); window._q = setTimeout(() => { ui.qSiswa = e.target.value; ui.hal = 1; gambar(); }, 200); };
-  $('#fStatus').onchange = e => { ui.statusSiswa = e.target.value; ui.hal = 1; gambar(); };
-  $('#fUkuran').onchange = e => { ui.ukuran = +e.target.value; ui.hal = 1; gambar(); };
-  $$('[data-kelas]').forEach(b => b.onclick = () => { ui.kelasSiswa = b.dataset.kelas; ui.hal = 1; gambar(); });
-  $('#bTambah').onclick = () => formSiswa(null);
-  $('#bUnggah').onclick = () => pilihBerkas(m => imporSiswa(m));
-  $('#bUnduhAbsen').onclick = () => {
-    const per = new Map();
-    siswaTersaring().filter(x => x.status === 'aktif').forEach(x => {
-      const k = x.kelas || '(tanpa kelas)';
-      if (!per.has(k)) per.set(k, []);
-      per.get(k).push(x);
-    });
-    [...per.values()].forEach(a => a.sort((x, y) => x.nama.localeCompare(y.nama, 'id')));
-    // Wali kelas diambil dari tugas guru bila rombelnya tunggal.
-    const kelasTerpilih = [...per.keys()];
-    const wali = kelasTerpilih.length === 1 ? namaWali(kelasTerpilih[0]) : '';
-    unduhAbsenXlsx('Daftar Hadir Tatap Muka',
-      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: wali },
-      new Map([...per.entries()].sort()), '');
-  };
-  $('#bUnduh').onclick = () => unduhTabel('Daftar Siswa', kolomSiswa(), siswaTersaring(),
-    `Tahun Pelajaran ${sesi.ta}` + (ui.kelasSiswa ? `  ·  Kelas ${ui.kelasSiswa}` : ''));
   $('#cbAll').onchange = e => { laman.forEach(s => e.target.checked ? sel.add(s.id) : sel.delete(s.id)); gambar(); };
-  $('tbody').onclick = e => {
+  $('#panelSiswa tbody').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
     const id = tr.dataset.id;
     if (e.target.classList.contains('cb')) { e.target.checked ? sel.add(id) : sel.delete(id); gambar(); }
@@ -907,13 +1000,6 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
 
 /* -------------------------------------------------------------- guru */
 function halGuru() {
-  const q = ui.qGuru.trim().toLowerCase();
-  const data = D.guru.filter(g => {
-    if (ui.statusGuru !== 'semua' && g.status_aktif !== ui.statusGuru) return false;
-    if (q && !(g.nama + ' ' + g.nig + ' ' + g.id + ' ' + (g.mapel_utama || '')).toLowerCase().includes(q)) return false;
-    return true;
-  });
-  const tugasGuru = id => D.tugas.filter(t => t.guru_id === id && t.aktif);
   // Kepala sekolah diberi tahu lewat kotak di atas daftar dan tanda pada barisnya;
   // pengesahannya tetap ditekan sendiri, tidak otomatis.
   const layakJenis = jenis => (D.bpjs || []).filter(b => b.jenis === jenis && b.status === 'memenuhi');
@@ -940,6 +1026,35 @@ function halGuru() {
       <select class="field" id="fStatus" style="width:auto">
         ${['semua', ...STATUS_GURU].map(s => `<option value="${s}" ${ui.statusGuru === s ? 'selected' : ''}>${s === 'semua' ? 'Semua status' : s}</option>`).join('')}
       </select></div>
+    <div id="panelGuru"></div>`;
+
+  // Pencarian hanya menggambar ulang tabelnya — kotak pencarian tetap fokus (4 Oktober 2026).
+  $('#q').oninput = e => { clearTimeout(window._qg); window._qg = setTimeout(() => { ui.qGuru = e.target.value; gambarPanelGuru(); }, 200); };
+  $('#fStatus').onchange = e => { ui.statusGuru = e.target.value; gambar(); };
+  $('#bTambah').onclick = () => formGuru(null);
+  // Pengesahan bisa dilakukan di peramban lain (kepala sekolah); tombol ini
+  // menyegarkan tanpa memuat ulang seluruh halaman.
+  $('#bUlang').onclick = () => jalankan('Memuat ulang…', async () => {
+    if (MODE !== 'contoh') D.guru = await ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc') || D.guru;
+    await muatBpjs();
+    toast('Data guru dan tanda tunjangan dibaca ulang');
+  });
+  $('#bUnggah').onclick = () => pilihBerkas(m => imporGuru(m));
+  $('#bUnduh').onclick = () => unduhTabel('Daftar Guru', kolomGuru(), D.guru,
+    `Tahun Pelajaran ${sesi.ta}  ·  ${D.guru.filter(g => g.status_aktif === 'Aktif').length} guru aktif`);
+  gambarPanelGuru();
+}
+
+// Tabel guru (bergantung pada pencarian dan saringan status) beserta ikatannya.
+function gambarPanelGuru() {
+  const q = ui.qGuru.trim().toLowerCase();
+  const data = D.guru.filter(g => {
+    if (ui.statusGuru !== 'semua' && g.status_aktif !== ui.statusGuru) return false;
+    if (q && !(g.nama + ' ' + g.nig + ' ' + g.id + ' ' + (g.mapel_utama || '')).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const tugasGuru = id => D.tugas.filter(t => t.guru_id === id && t.aktif);
+  $('#panelGuru').innerHTML = `
     <div class="panel"><div class="panel-head"><div class="info">${data.length} dari ${D.guru.length} guru</div></div>
       <div class="scroll"><table><thead><tr>
         <th style="width:60px">NIG</th><th>Nama</th>
@@ -960,21 +1075,7 @@ function halGuru() {
             <button class="btn btn-sm bTugas">Tugas</button>${tombolBpjs(g.id)}</td></tr>`).join('')
         : `<tr><td colspan="7"><div class="empty"><b>Tidak ada guru yang cocok</b>Ubah pencarian atau saringan.</div></td></tr>`
       }</tbody></table></div></div>`;
-
-  $('#q').oninput = e => { clearTimeout(window._qg); window._qg = setTimeout(() => { ui.qGuru = e.target.value; gambar(); }, 200); };
-  $('#fStatus').onchange = e => { ui.statusGuru = e.target.value; gambar(); };
-  $('#bTambah').onclick = () => formGuru(null);
-  // Pengesahan bisa dilakukan di peramban lain (kepala sekolah); tombol ini
-  // menyegarkan tanpa memuat ulang seluruh halaman.
-  $('#bUlang').onclick = () => jalankan('Memuat ulang…', async () => {
-    if (MODE !== 'contoh') D.guru = await ambil('guru', 'select=' + KOLOM_GURU + '&order=tmt_sekolah.asc.nullslast,nama.asc') || D.guru;
-    await muatBpjs();
-    toast('Data guru dan tanda tunjangan dibaca ulang');
-  });
-  $('#bUnggah').onclick = () => pilihBerkas(m => imporGuru(m));
-  $('#bUnduh').onclick = () => unduhTabel('Daftar Guru', kolomGuru(), D.guru,
-    `Tahun Pelajaran ${sesi.ta}  ·  ${D.guru.filter(g => g.status_aktif === 'Aktif').length} guru aktif`);
-  $('tbody').onclick = e => {
+  $('#panelGuru tbody').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
     if (e.target.classList.contains('bUbah')) formGuru(tr.dataset.id);
     else if (e.target.classList.contains('bBpjs')) dialogBpjs(tr.dataset.id, e.target.dataset.jenis);
@@ -1894,6 +1995,12 @@ const CDN_EXCELJS = [
   'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
 ];
 
+/* Pustaka dari luar hanya dijalankan bila isinya persis berkas yang sudah
+   diperiksa (Subresource Integrity, 4 Oktober 2026) — CDN yang disusupi tidak
+   bisa menjalankan kode di halaman yang sedang memegang sesi operator. Kedua
+   CDN menyajikan berkas ExcelJS 4.4.0 yang sama, jadi hash-nya satu. Bila
+   versinya diganti, hash-nya ikut diganti. */
+const SRI_EXCELJS = 'sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz';
 async function muatExcelJS() {
   if (window.ExcelJS) return window.ExcelJS;
   for (const alamat of CDN_EXCELJS) {
@@ -1901,6 +2008,8 @@ async function muatExcelJS() {
       await new Promise((selesai, gagal) => {
         const sc = document.createElement('script');
         sc.src = alamat;
+        sc.integrity = SRI_EXCELJS;
+        sc.crossOrigin = 'anonymous';
         sc.onload = selesai;
         sc.onerror = () => gagal(new Error('gagal memuat ' + alamat));
         document.head.appendChild(sc);
@@ -3043,20 +3152,21 @@ function periksaTanggalBerlaku(tgl) {
    atau null, siswa_id }]. a null = masuk kelompok baru; k null = keluar. */
 async function terapkanPindahKelompok(perubahan, tgl) {
   if (MODE === 'contoh') { toast('Mode contoh: perpindahan tidak disimpan'); return; }
+  await tulisBersama(langkahPindahKelompok(perubahan, tgl));
+}
+// Langkah-langkah pindah kelompok, urutannya sama seperti dulu: koreksi di
+// tempat, tutup keanggotaan lama, lalu buka yang baru.
+function langkahPindahKelompok(perubahan, tgl) {
   const koreksi = perubahan.filter(x => x.a && x.a.mulai && tgl <= x.a.mulai);
   const biasa = perubahan.filter(x => !koreksi.includes(x));
-  for (const x of koreksi) {
-    if (x.k) await perbarui('anggota_kelompok', `id=eq.${enc(x.a.id)}`, { kelas_id: x.k.id });
-    else await buang('anggota_kelompok', `id=eq.${enc(x.a.id)}`);
-  }
-  const tutup = biasa.filter(x => x.a).map(x => x.a.id);
-  for (let i = 0; i < tutup.length; i += 100)
-    await perbarui('anggota_kelompok', `id=in.(${tutup.slice(i, i + 100).map(enc).join(',')})`,
-                   { aktif: false, selesai: sehariSebelum(tgl) });
+  const daftar = koreksi.map(x => x.k
+    ? langkah.ubah('anggota_kelompok', { id: x.a.id }, { kelas_id: x.k.id })
+    : langkah.hapus('anggota_kelompok', { id: x.a.id }));
+  biasa.filter(x => x.a).forEach(x =>
+    daftar.push(langkah.ubah('anggota_kelompok', { id: x.a.id }, { aktif: false, selesai: sehariSebelum(tgl) })));
   const buka = biasa.filter(x => x.k).map(x => ({ siswa_id: x.siswa_id, kelas_id: x.k.id, tahun_ajaran: sesi.ta, mulai: tgl }));
-  for (let i = 0; i < buka.length; i += 200)
-    await api('/rest/v1/anggota_kelompok', { method: 'POST', headers: { Prefer: 'return=minimal' },
-                                              body: JSON.stringify(buka.slice(i, i + 200)) });
+  if (buka.length) daftar.push(langkah.tambah('anggota_kelompok', buka));
+  return daftar;
 }
 
 /* Kelompok tujuan yang sah untuk sekumpulan anggota: mapel sama, bukan
@@ -3842,12 +3952,15 @@ function dialogJamKerjaGuru(g) {
     jalankan('Menyimpan…', async () => {
       if (MODE === 'db') {
         // Seluruh pengecualian orang ini ditulis ulang: yang kembali ke bawaan
-        // hilang, yang lain diganti — lebih sederhana daripada membandingkan satu-satu.
-        await buang('jam_kerja_guru', `guru_id=eq.${enc(g.id)}`);
-        if (baris.length) await api('/rest/v1/jam_kerja_guru', { method: 'POST', body: JSON.stringify(baris) });
-        D.jamKerjaGuru = await ambilSemua('jam_kerja_guru', 'select=*');
+        // hilang, yang lain diganti — lebih sederhana daripada membandingkan
+        // satu-satu. Satu transaksi (di_tulis) bersama kelompok tarif tugas
+        // Staf-nya: bila putus di tengah, pengecualian lama tidak hilang.
+        const daftar = [langkah.hapus('jam_kerja_guru', { guru_id: g.id })];
+        if (baris.length) daftar.push(langkah.tambah('jam_kerja_guru', baris));
         // Kelompok tarif melekat pada tugas Staf-nya, bukan pada jam kerja.
-        if (kelompokBerubah) await perbarui('guru_tugas', `id=eq.${enc(tugas.id)}`, { kelompok_tarif: kelompokBaru });
+        if (kelompokBerubah) daftar.push(langkah.ubah('guru_tugas', { id: tugas.id }, { kelompok_tarif: kelompokBaru }));
+        await tulisBersama(daftar);
+        D.jamKerjaGuru = await ambilSemua('jam_kerja_guru', 'select=*');
       } else {
         D.jamKerjaGuru = D.jamKerjaGuru.filter(r => r.guru_id !== g.id).concat(baris);
       }
@@ -4987,20 +5100,20 @@ function unggahLembarKelompok(matrix, namaBerkas) {
 
 async function simpanPindahKelompok(ubah, tgl) {
   if (MODE === 'contoh') { toast('Mode contoh: perpindahan tidak disimpan'); return; }
-  const hapusKecuali = u => buang('pengecualian_kelompok',
-    `siswa_id=eq.${enc(u.s.id)}&mapel_id=eq.${enc(mapelProgram(u.p))}&tahun_ajaran=eq.${enc(sesi.ta)}`);
+  // Satu transaksi (di_tulis), tiga tahap dalam urutan yang sama seperti dulu:
   // 1. Pengecualian lama yang tidak berlaku lagi dihapus dulu, supaya
   //    pemicu tidak menolak keanggotaan baru.
-  for (const u of ubah.filter(u => u.x && u.alasanBerubah)) await hapusKecuali(u);
+  const daftar = ubah.filter(u => u.x && u.alasanBerubah).map(u => langkah.hapus('pengecualian_kelompok',
+    { siswa_id: u.s.id, mapel_id: mapelProgram(u.p), tahun_ajaran: sesi.ta }));
   // 2. Tutup / buka keanggotaan.
-  await terapkanPindahKelompok(ubah.filter(u => u.kelompokBerubah)
-    .map(u => ({ a: u.a, k: u.k, siswa_id: u.s.id })), tgl);
+  daftar.push(...langkahPindahKelompok(ubah.filter(u => u.kelompokBerubah)
+    .map(u => ({ a: u.a, k: u.k, siswa_id: u.s.id })), tgl));
   // 3. Pengecualian baru — sesudah keanggotaannya ditutup.
   const baru = ubah.filter(u => u.alasan && u.alasanBerubah).map(u => ({
     siswa_id: u.s.id, mapel_id: mapelProgram(u.p), tahun_ajaran: sesi.ta,
     alasan: u.alasan, dicatat_oleh: sesi.petugas || null }));
-  if (baru.length) await api('/rest/v1/pengecualian_kelompok', { method: 'POST',
-    headers: { Prefer: 'return=minimal' }, body: JSON.stringify(baru) });
+  if (baru.length) daftar.push(langkah.tambah('pengecualian_kelompok', baru));
+  await tulisBersama(daftar);
   await muatSemua();
   toast(`${ubah.length} perubahan kelompok tersimpan, berlaku mulai ${tglIndo(tgl)}.`);
 }
@@ -5073,11 +5186,31 @@ function pilihBerkas(lanjut) {
   inp.onchange = () => { const f = inp.files[0]; if (f) bacaBerkas(f, lanjut); };
   inp.click();
 }
-function bacaBerkas(file, lanjut) {
+/* SheetJS (membaca berkas impor dan menulis cadangan) dimuat saat dipakai,
+   bukan menahan setiap pembukaan halaman (4 Oktober 2026): ±300 KB yang dulu
+   diunduh sebelum layar masuk tampil. Versi 0.20.3 di-host sendiri dengan
+   SRI — 0.18.5 dari cdnjs punya celah prototype pollution (CVE-2023-30533)
+   dan ReDoS (CVE-2024-22363) justru saat membaca berkas unggahan. */
+let janjiXLSX = null;
+function muatXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!janjiXLSX) janjiXLSX = new Promise((selesai, gagal) => {
+    const sc = document.createElement('script');
+    sc.src = 'assets/vendor/xlsx-0.20.3.full.min.js';
+    sc.integrity = 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT';
+    sc.crossOrigin = 'anonymous';
+    sc.onload = () => (window.XLSX ? selesai(window.XLSX) : gagal(new Error('Pembaca Excel gagal dimuat.')));
+    sc.onerror = () => { janjiXLSX = null; sc.remove(); gagal(new Error('Pembaca Excel gagal dimuat. Periksa sambungan internet, lalu coba lagi.')); };
+    document.head.appendChild(sc);
+  });
+  return janjiXLSX;
+}
+
+async function bacaBerkas(file, lanjut) {
   const fr = new FileReader();
   const n = file.name.toLowerCase();
   if (n.endsWith('.xlsx') || n.endsWith('.xls')) {
-    if (typeof XLSX === 'undefined') return toast('Pembaca Excel belum termuat. Gunakan berkas CSV.', true);
+    try { await muatXLSX(); } catch (e) { return toast(e.message + ' Atau gunakan berkas CSV.', true); }
     fr.onload = e => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
@@ -5397,8 +5530,8 @@ async function unduhTabel(judul, kolom, data, subjudul) {
    kolom sehingga impornya gagal. Sebagai gantinya ditambahkan satu
    lembar identitas, supaya tetap jelas berkas ini milik siapa dan
    kapan dibuat.                                                      */
-function unduhCadangan() {
-  if (typeof XLSX === 'undefined') return toast('Pembuat Excel belum termuat. Coba muat ulang halaman.', true);
+async function unduhCadangan() {
+  try { await muatXLSX(); } catch (e) { return toast(e.message, true); }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
     ['CADANGAN DATA INDUK'],
