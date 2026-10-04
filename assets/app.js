@@ -848,6 +848,8 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
         c.alignment = { horizontal: 'center', vertical: 'middle' };
       }
       ws.getRow(b1).height = 20; ws.getRow(b2).height = 16;
+      // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
+      pasKepalaExcel(ws, b1, b2, { kolomAkhir });
       r = b2 + 1;
 
       siswa.forEach(function (sw, i) {
@@ -1966,6 +1968,8 @@ async function lembarMatriksPiket(wb, { nama, judul, hari, jamKe, isiSel, jamTek
                  left: { style: 'thin' }, right: { style: 'thin' } };
   });
   kepala.height = 22;
+  // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
+  pasKepalaExcel(ws, barisKepala, barisKepala, { kolomAkhir: kolomTerakhir });
   r++;
 
   jamKe.forEach((j, urutan) => {
@@ -2108,6 +2112,8 @@ async function unduhPiketParkiranXlsx() {
                    left: { style: 'thin' }, right: { style: 'thin' } };
     });
     kepala.height = 22;
+    // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
+    pasKepalaExcel(ws, r, r, { kolomAkhir: KOL });
     r++;
     HR.forEach((h, i) => {
       const p = roster.find(x => x.hari === h);
@@ -2571,6 +2577,8 @@ async function unduhJadwalXlsx(daftarNama, sudut, smt) {
                      left: { style: 'thin' }, right: { style: 'thin' } };
       });
       judul.height = 24;
+      // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
+      pasKepalaExcel(ws, r, r, { kolomAkhir });
       r++;
 
       jamKe.forEach(jk => {
@@ -4651,6 +4659,8 @@ async function unduhLembarKenaikan(mode = 'tahun') {
       c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
     });
     judul.height = 30;
+    // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
+    pasKepalaExcel(ws, BARIS_JUDUL, BARIS_JUDUL, { kolomAkhir: kolom.length });
 
     // Lembar Pilihan: daftar isian yang sah, juga sumber daftar tarik-turun.
     const wp = wb.addWorksheet('Pilihan');
@@ -5324,6 +5334,8 @@ async function unduhTabel(judul, kolom, data, subjudul) {
                    left: { style: 'thin' }, right: { style: 'thin' } };
     });
     judulBaris.height = 24;
+    // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
+    pasKepalaExcel(ws, barisJudulKolom, barisJudulKolom, { kolomAkhir });
     r++;
 
     data.forEach((d, i) => {
