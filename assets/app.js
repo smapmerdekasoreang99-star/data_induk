@@ -1024,7 +1024,6 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi
       }
 
       ws.views = [{ state: 'frozen', xSplit: 4, ySplit: b3 }];
-      r = kakiExcel(ws, r + 1, kolomAkhir);
       penutupHadirExcel(ws, r + 1, kolomAkhir, opsi.penutup || 'Bagian Kurikulum');
     }
 
@@ -5498,7 +5497,9 @@ function ttdExcel(ws, baris, kolomAkhir) {
 /* Penutup daftar hadir: tempat, tanggal, lalu langsung bagian yang
    mengeluarkan — tanpa ruang tanda tangan dan nama. Letak dan lebarnya
    mengikuti blok tanda tangan bersama (KopDokumen.ttdExcel); baris "nama"
-   bawaannya dipakai untuk nama bagian, dengan huruf biasa. */
+   bawaannya dipakai untuk nama bagian, dengan huruf biasa.
+   Catatan kaki ("Dicetak dari aplikasi …") tidak memakan baris sendiri:
+   ditulis sebaris dengan tempat, tanggal, rata kiri dari tepi tabel. */
 function penutupHadirExcel(ws, baris, kolomAkhir, bagian) {
   const tgl = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
   const akhir = window.KopDokumen.ttdExcel(ws, baris, { kolomAkhir, ruang: 0, blok: [
@@ -5506,6 +5507,20 @@ function penutupHadirExcel(ws, baris, kolomAkhir, bagian) {
   ] });
   const c = ws.getCell(baris + 1, kolomAkhir);
   (c.isMerged ? c.master : c).font = { name: 'Calibri', size: 10 };
+
+  const profil = profilKop();
+  const kaki = window.KopDokumen.tataLetak(profil.tata_letak).kaki;
+  if (kaki.tampil && profil.catatan_kaki) {
+    const t = ws.getCell(baris, kolomAkhir);
+    const sampai = (t.isMerged ? t.master.col : kolomAkhir) - 1;   // sebelum blok tempat, tanggal
+    if (sampai >= 1) {
+      if (sampai > 1) ws.mergeCells(baris, 1, baris, sampai);
+      const k = ws.getCell(baris, 1);
+      k.value = profil.catatan_kaki;
+      k.font = { name: 'Calibri', size: 8, italic: true, color: { argb: 'FF808080' } };
+      k.alignment = { horizontal: 'left', vertical: 'middle' };
+    }
+  }
   return akhir;
 }
 
