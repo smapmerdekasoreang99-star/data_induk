@@ -829,7 +829,7 @@ function gambarPanelSiswa() {
     // Wali kelas diambil dari tugas guru bila rombelnya tunggal.
     const kelasTerpilih = [...per.keys()];
     const tunggal = kelasTerpilih.length === 1 ? kelasTerpilih[0] : '';
-    unduhAbsenXlsx('Daftar Hadir Tatap Muka',
+    unduhAbsenXlsx('Daftar Hadir Siswa',
       { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: tunggal ? namaWali(tunggal) : '' },
       new Map([...per.entries()].sort()), '',
       { namaBerkas: namaBerkasHadir(tunggal || 'Semua Kelas') });
@@ -913,8 +913,9 @@ function namaBerkasHadir(nama) {
 /* Daftar hadir kosong untuk diisi manual, mengikuti bentuk yang sudah
    dipakai sekolah: kop, keterangan kelas dan pengajar, lalu kolom
    pertemuan ke-1 sampai ke-20 yang dibiarkan kosong.
-   opsi.tahsin: tiap pertemuan dua kolom sempit — "T" kehadiran (A/I/S) dan
-   "S" sholat (S/T) — keduanya kosong untuk diisi pembimbing (5 Oktober 2026). */
+   opsi.tahsin: 16 pertemuan, masing-masing dua kolom — "T" kehadiran (A/I/S)
+   dan "S" sholat (S/T) — keduanya kosong untuk diisi pembimbing, dengan baris
+   kosong di atas T/S untuk menulis tanggal singkat (5 Oktober 2026). */
 async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi) {
   opsi = opsi || {};
   const isiTotal = [...kelompokSiswa.values()].reduce((a, b) => a + b.length, 0);
@@ -923,7 +924,7 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi
   await jalankan('Menyiapkan daftar hadir…', async () => {
     const ExcelJS = await muatExcelJS();
     const wb = new ExcelJS.Workbook();
-    const PERTEMUAN = 20;
+    const PERTEMUAN = opsi.tahsin ? 16 : 20;
     const PER = opsi.tahsin ? 2 : 1;          // kolom per pertemuan
     const kepala = (c, teks, ukuran) => {
       c.value = teks;
@@ -940,7 +941,7 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi
       });
       const kolomAkhir = 4 + PERTEMUAN * PER;
       ws.columns = [{ width: 4.5 }, { width: 32 }, { width: 5 }, { width: 8 },
-                    ...Array.from({ length: PERTEMUAN * PER }, () => ({ width: opsi.tahsin ? 2.6 : 3.4 }))];
+                    ...Array.from({ length: PERTEMUAN * PER }, () => ({ width: opsi.tahsin ? 3.2 : 3.4 }))];
 
       // Kop yang sama dengan berkas lain: logo, nama dan alamat sekolah
       // di sebelahnya, lalu judul di tengah.
@@ -959,8 +960,9 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi
       });
       r++;
 
-      // Tahsin memakai tiga baris kepala: judul, nomor pertemuan, lalu T/S.
-      const b1 = r, b2 = r + 1, b3 = opsi.tahsin ? r + 2 : b2;
+      // Tahsin memakai empat baris kepala: judul, nomor pertemuan,
+      // tempat tanggal (putih, diisi tangan), lalu T/S.
+      const b1 = r, b2 = r + 1, bTgl = r + 2, b3 = opsi.tahsin ? r + 3 : b2;
       [['No', 1], ['Nama Siswa', 2], ['L/P', 3], ['Kelas', 4]].forEach(function (x) {
         ws.mergeCells(b1, x[1], b3, x[1]);
         kepala(ws.getCell(b1, x[1]), x[0], 10);
@@ -972,12 +974,15 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi
         if (PER > 1) ws.mergeCells(b2, k, b2, k + PER - 1);
         kepala(ws.getCell(b2, k), n, 9);
         if (opsi.tahsin) {
+          ws.mergeCells(bTgl, k, bTgl, k + 1);
+          ws.getCell(bTgl, k).border = { top: { style: 'thin' }, bottom: { style: 'thin' },
+                                         left: { style: 'thin' }, right: { style: 'thin' } };
           kepala(ws.getCell(b3, k), 'T', 8);
           kepala(ws.getCell(b3, k + 1), 'S', 8);
         }
       }
       ws.getRow(b1).height = 20; ws.getRow(b2).height = 16;
-      if (opsi.tahsin) ws.getRow(b3).height = 14;
+      if (opsi.tahsin) { ws.getRow(bTgl).height = 24; ws.getRow(b3).height = 14; }
       // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
       pasKepalaExcel(ws, b1, b3, { kolomAkhir });
       r = b3 + 1;
@@ -2998,7 +3003,7 @@ function halKelompok() {
     const pembimbing = [...new Set(D.jadwal
       .filter(j => j.kelas === kel.nama && Number(j.semester) === semesterSekarang())
       .map(j => j.guru))].sort().join(', ');
-    unduhAbsenXlsx('Daftar Hadir ' + (kel.mapel || 'Kelompok Belajar'),
+    unduhAbsenXlsx('Daftar Hadir Siswa',
       { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: pembimbing },
       new Map([[kel.nama, daftar]]), kel.mapel || '',
       { namaBerkas: namaBerkasHadir(kel.nama), tahsin: PROGRAM_KELOMPOK.tahsin.pola.test(kel.mapel || kel.nama) });
