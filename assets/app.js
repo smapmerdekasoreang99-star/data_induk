@@ -749,8 +749,7 @@ function halSiswa() {
       <div class="sp"></div>
       <button class="btn btn-p" id="bTambah">+ Tambah siswa</button>
       <button class="btn-unduh unggah" id="bUnggah">Unggah berkas</button>
-      <button class="btn-unduh" data-fmt="xlsx" id="bUnduh">Unduh data</button>
-      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsen">Unduh absen</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduh">Unduh data</button></div>
     <div class="bar">
       <div class="grow"><input class="field" id="q" placeholder="Cari nama, NISN, atau NIS…" value="${esc(ui.qSiswa)}"></div>
       <select class="field" id="fStatus" style="width:auto">
@@ -774,21 +773,6 @@ function halSiswa() {
   $$('[data-kelas]').forEach(b => b.onclick = () => { ui.kelasSiswa = b.dataset.kelas; ui.hal = 1; gambar(); });
   $('#bTambah').onclick = () => formSiswa(null);
   $('#bUnggah').onclick = () => pilihBerkas(m => imporSiswa(m));
-  $('#bUnduhAbsen').onclick = () => {
-    const per = new Map();
-    siswaTersaring().filter(x => x.status === 'aktif').forEach(x => {
-      const k = x.kelas || '(tanpa kelas)';
-      if (!per.has(k)) per.set(k, []);
-      per.get(k).push(x);
-    });
-    [...per.values()].forEach(a => a.sort((x, y) => x.nama.localeCompare(y.nama, 'id')));
-    // Wali kelas diambil dari tugas guru bila rombelnya tunggal.
-    const kelasTerpilih = [...per.keys()];
-    const wali = kelasTerpilih.length === 1 ? namaWali(kelasTerpilih[0]) : '';
-    unduhAbsenXlsx('Daftar Hadir Tatap Muka',
-      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: wali },
-      new Map([...per.entries()].sort()), '');
-  };
   $('#bUnduh').onclick = () => unduhTabel('Daftar Siswa', kolomSiswa(), siswaTersaring(),
     `Tahun Pelajaran ${sesi.ta}` + (ui.kelasSiswa ? `  ·  Kelas ${ui.kelasSiswa}` : ''));
   gambarPanelSiswa();
@@ -803,7 +787,10 @@ function gambarPanelSiswa() {
   const laman = data.slice(mulai, mulai + ui.ukuran);
   $('#panelSiswa').innerHTML = `
     <div class="panel">
-      <div class="panel-head"><div class="info">${data.length === D.siswa.length ? data.length + ' siswa' : data.length + ' dari ' + D.siswa.length + ' siswa'}</div></div>
+      <div class="panel-head"><div class="info">${data.length === D.siswa.length ? data.length + ' siswa' : data.length + ' dari ' + D.siswa.length + ' siswa'}</div>
+        <div class="sp" style="flex:1"></div>
+        <button class="btn-unduh" data-fmt="xlsx" id="bUnduhHadir"
+          title="${ui.kelasSiswa ? 'Daftar hadir kelas ' + esc(ui.kelasSiswa) : 'Daftar hadir semua kelas yang tampil, satu lembar per kelas'}">Unduh daftar hadir</button></div>
       <div class="scroll"><table><thead><tr>
         <th style="width:34px"><input type="checkbox" class="cbx" id="cbAll"></th>
         <th style="width:44px" class="hide-sm">No</th>
@@ -829,6 +816,24 @@ function gambarPanelSiswa() {
         <div class="sp" style="flex:1"></div><div class="pg" id="pg"></div></div>
     </div>`;
   pasangPager(maxHal, n => { ui.hal = n; gambar(); });
+  // Daftar hadir mengikuti kelas yang dipilih (dan saringan yang berlaku);
+  // tanpa pilihan kelas, satu lembar per kelas yang tampil.
+  $('#bUnduhHadir').onclick = () => {
+    const per = new Map();
+    data.filter(x => x.status === 'aktif').forEach(x => {
+      const k = x.kelas || '(tanpa kelas)';
+      if (!per.has(k)) per.set(k, []);
+      per.get(k).push(x);
+    });
+    [...per.values()].forEach(a => a.sort((x, y) => x.nama.localeCompare(y.nama, 'id')));
+    // Wali kelas diambil dari tugas guru bila rombelnya tunggal.
+    const kelasTerpilih = [...per.keys()];
+    const tunggal = kelasTerpilih.length === 1 ? kelasTerpilih[0] : '';
+    unduhAbsenXlsx('Daftar Hadir Tatap Muka',
+      { labelKelas: 'Kelas', labelGuru: 'Wali Kelas', nilaiGuru: tunggal ? namaWali(tunggal) : '' },
+      new Map([...per.entries()].sort()), '',
+      { namaBerkas: namaBerkasHadir(tunggal || 'Semua Kelas') });
+  };
   $('#cbAll').onchange = e => { laman.forEach(s => e.target.checked ? sel.add(s.id) : sel.delete(s.id)); gambar(); };
   $('#panelSiswa tbody').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
@@ -897,10 +902,21 @@ function namaWali(kodeRombel) {
   return t ? namaGuru(t.guru_id) : '';
 }
 
+/* Nama berkas daftar hadir dari nama kelas/kelompok, tanpa stempel tanggal:
+   "Tahsin · Mahir 1" → Daftar_Hadir_Tahsin_Mahir-1.xlsx,
+   "MD10-3" → Daftar_Hadir_MD10-3.xlsx, "X-1" → Daftar_Hadir_X-1.xlsx. */
+function namaBerkasHadir(nama) {
+  return 'Daftar_Hadir_' + String(nama).trim()
+    .replace(/\s*·\s*/g, '_').replace(/\s+/g, '-').replace(/[^\w-]+/g, '') + '.xlsx';
+}
+
 /* Daftar hadir kosong untuk diisi manual, mengikuti bentuk yang sudah
    dipakai sekolah: kop, keterangan kelas dan pengajar, lalu kolom
-   pertemuan ke-1 sampai ke-20 yang dibiarkan kosong. */
-async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
+   pertemuan ke-1 sampai ke-20 yang dibiarkan kosong.
+   opsi.tahsin: tiap pertemuan dua kolom sempit — "T" kehadiran (A/I/S) dan
+   "S" sholat (S/T) — keduanya kosong untuk diisi pembimbing (5 Oktober 2026). */
+async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel, opsi) {
+  opsi = opsi || {};
   const isiTotal = [...kelompokSiswa.values()].reduce((a, b) => a + b.length, 0);
   if (!isiTotal) return toast('Tidak ada siswa untuk dibuatkan daftar hadir.', true);
 
@@ -908,16 +924,23 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
     const ExcelJS = await muatExcelJS();
     const wb = new ExcelJS.Workbook();
     const PERTEMUAN = 20;
+    const PER = opsi.tahsin ? 2 : 1;          // kolom per pertemuan
+    const kepala = (c, teks, ukuran) => {
+      c.value = teks;
+      c.font = { bold: true, size: ukuran, color: { argb: TEKS_KEPALA_XLSX } };
+      c.fill = ISI_KEPALA_XLSX;
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    };
 
     for (const [namaKelas, siswa] of kelompokSiswa) {
       if (!siswa.length) continue;
-      const ws = wb.addWorksheet(namaKelas.replace(/[\\\/?*\[\]:]/g, '-').slice(0, 31), {
+      const ws = wb.addWorksheet(namaKelas.replace(/[\\/?*\[\]:]/g, '-').slice(0, 31), {
         pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
                      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } }
       });
-      const kolomAkhir = 4 + PERTEMUAN;
+      const kolomAkhir = 4 + PERTEMUAN * PER;
       ws.columns = [{ width: 4.5 }, { width: 32 }, { width: 5 }, { width: 8 },
-                    ...Array.from({ length: PERTEMUAN }, () => ({ width: 3.4 }))];
+                    ...Array.from({ length: PERTEMUAN * PER }, () => ({ width: opsi.tahsin ? 2.6 : 3.4 }))];
 
       // Kop yang sama dengan berkas lain: logo, nama dan alamat sekolah
       // di sebelahnya, lalu judul di tengah.
@@ -936,33 +959,31 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
       });
       r++;
 
-      const b1 = r, b2 = r + 1;
+      // Tahsin memakai tiga baris kepala: judul, nomor pertemuan, lalu T/S.
+      const b1 = r, b2 = r + 1, b3 = opsi.tahsin ? r + 2 : b2;
       [['No', 1], ['Nama Siswa', 2], ['L/P', 3], ['Kelas', 4]].forEach(function (x) {
-        ws.mergeCells(b1, x[1], b2, x[1]);
-        const c = ws.getCell(b1, x[1]);
-        c.value = x[0];
-        c.font = { bold: true, size: 10, color: { argb: TEKS_KEPALA_XLSX } };
-        c.fill = ISI_KEPALA_XLSX;
-        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        ws.mergeCells(b1, x[1], b3, x[1]);
+        kepala(ws.getCell(b1, x[1]), x[0], 10);
       });
       ws.mergeCells(b1, 5, b1, kolomAkhir);
-      const cp = ws.getCell(b1, 5);
-      cp.value = 'Pertemuan Ke / Tanggal';
-      cp.font = { bold: true, size: 10, color: { argb: TEKS_KEPALA_XLSX } };
-      cp.fill = ISI_KEPALA_XLSX;
-      cp.alignment = { horizontal: 'center', vertical: 'middle' };
+      kepala(ws.getCell(b1, 5), 'Pertemuan Ke / Tanggal', 10);
       for (let n = 1; n <= PERTEMUAN; n++) {
-        const c = ws.getCell(b2, 4 + n);
-        c.value = n;
-        c.font = { bold: true, size: 9, color: { argb: TEKS_KEPALA_XLSX } };
-        c.fill = ISI_KEPALA_XLSX;
-        c.alignment = { horizontal: 'center', vertical: 'middle' };
+        const k = 5 + (n - 1) * PER;
+        if (PER > 1) ws.mergeCells(b2, k, b2, k + PER - 1);
+        kepala(ws.getCell(b2, k), n, 9);
+        if (opsi.tahsin) {
+          kepala(ws.getCell(b3, k), 'T', 8);
+          kepala(ws.getCell(b3, k + 1), 'S', 8);
+        }
       }
       ws.getRow(b1).height = 20; ws.getRow(b2).height = 16;
+      if (opsi.tahsin) ws.getRow(b3).height = 14;
       // Kepala tabel: kata tidak terpotong di tengah (pasKepalaExcel, 4 Oktober 2026).
-      pasKepalaExcel(ws, b1, b2, { kolomAkhir });
-      r = b2 + 1;
+      pasKepalaExcel(ws, b1, b3, { kolomAkhir });
+      r = b3 + 1;
 
+      const garis = { style: 'thin', color: { argb: 'FFBFC9C6' } };
+      const garisPertemuan = { style: 'thin', color: { argb: 'FF7A8A86' } };
       siswa.forEach(function (sw, i) {
         const br = ws.getRow(r);
         br.getCell(1).value = i + 1;
@@ -977,15 +998,23 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
         for (let k = 1; k <= kolomAkhir; k++) {
           const c = ws.getCell(r, k);
           if (!c.font) c.font = { size: 10 };
-          c.border = { top: { style: 'thin', color: { argb: 'FFBFC9C6' } },
-                       bottom: { style: 'thin', color: { argb: 'FFBFC9C6' } },
-                       left: { style: 'thin', color: { argb: 'FFBFC9C6' } },
-                       right: { style: 'thin', color: { argb: 'FFBFC9C6' } } };
+          if (k > 4) c.alignment = { horizontal: 'center' };
+          // Tahsin: garis antarpertemuan sedikit lebih tegas supaya
+          // pasangan T/S tidak tertukar dengan pertemuan sebelahnya.
+          const tepiKanan = opsi.tahsin && k > 4 && (k - 4) % PER === 0;
+          c.border = { top: garis, bottom: garis, left: garis, right: tepiKanan ? garisPertemuan : garis };
         }
         r++;
       });
 
-      ws.views = [{ state: 'frozen', xSplit: 4, ySplit: b2 }];
+      if (opsi.tahsin) {
+        ws.mergeCells(r, 1, r, kolomAkhir);
+        ws.getCell(r, 1).value = 'Keterangan: T = kehadiran (A = alpa, I = izin, S = sakit)  ·  S = sholat (S = sholat, T = tidak sholat)';
+        ws.getCell(r, 1).font = { size: 9, italic: true };
+        r++;
+      }
+
+      ws.views = [{ state: 'frozen', xSplit: 4, ySplit: b3 }];
       r = kakiExcel(ws, r + 1, kolomAkhir);
       ttdExcel(ws, r + 1, kolomAkhir);
     }
@@ -993,7 +1022,7 @@ async function unduhAbsenXlsx(judulAbsen, keterangan, kelompokSiswa, mapel) {
     if (!wb.worksheets.length) throw new Error('Tidak ada daftar hadir yang terbentuk.');
     const buf = await wb.xlsx.writeBuffer();
     unduhBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-              judulAbsen.replace(/[^\w]+/g, '_') + '_' + stempel() + '.xlsx');
+              opsi.namaBerkas || namaBerkasHadir(judulAbsen.replace(/^Daftar Hadir\s*/, '') || 'Kelas'));
     toast(wb.worksheets.length + ' lembar daftar hadir diunduh');
   });
 }
@@ -2880,10 +2909,9 @@ function halKelompok() {
       <div class="sp"></div>
       <button class="btn" id="bTambahKelompok">+ Tambah kelompok</button>
       ${kel && kel.aktif !== false ? '<button class="btn btn-p" id="bTambahAnggota">+ Tambah anggota</button>' : ''}
-      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhKelompok">Unduh data</button>
-      ${kel ? '<button class="btn-unduh" data-fmt="xlsx" id="bUnduhAbsenKel">Unduh absen</button>' : ''}
+      <button class="btn-unduh unggah" id="bUnggahPindahKel">Unggah lembar pindah</button>
       <button class="btn-unduh" data-fmt="xlsx" id="bUnduhPindahKel" title="Rombak kelompok MD dan Tahsin lewat Excel, mis. tiap semester">Unduh lembar pindah</button>
-      <button class="btn-unduh unggah" id="bUnggahPindahKel">Unggah lembar pindah</button></div>
+      <button class="btn-unduh" data-fmt="xlsx" id="bUnduhKelompok">Unduh data</button></div>
 
     ${D.galat.kelompok ? `<div class="info-box"><b>Data kelompok tidak dapat dibaca.</b>
       ${esc(D.galat.kelompok)}<br>Kemungkinan berkas kelompok belajar belum dijalankan.</div>` : ''}
@@ -2919,7 +2947,8 @@ function halKelompok() {
           : '<button class="btn btn-sm btn-d" id="bNonaktifKelompok">Nonaktifkan</button>'}
         <div class="sp" style="flex:1"></div>
         ${terpilih.length ? `<button class="btn btn-sm btn-p" id="bPindahTerpilih">Pindahkan ${terpilih.length} terpilih</button>` : ''}
-        <div class="info">${anggota.length} siswa${kel.tingkat ? ' · khusus tingkat ' + kel.tingkat : ' · semua tingkat'}</div></div>
+        <div class="info">${anggota.length} siswa${kel.tingkat ? ' · khusus tingkat ' + kel.tingkat : ' · semua tingkat'}</div>
+        <button class="btn-unduh" data-fmt="xlsx" id="bUnduhHadirKel" title="Daftar hadir ${esc(kel.nama)}">Unduh daftar hadir</button></div>
       <div class="scroll"><table><thead><tr>
         <th style="width:34px"><input type="checkbox" class="cbx" id="cbKelAll" ${anggota.length && terpilih.length === anggota.length ? 'checked' : ''}></th>
         <th style="width:44px" class="hide-sm">No</th><th>Siswa</th>
@@ -2960,7 +2989,7 @@ function halKelompok() {
   $('#bTambahKelompok').onclick = formKelompok;
   if ($('#bLihatBelum')) $('#bLihatBelum').onclick = dialogBelumKelompok;
   $('#bUnduhKelompok').onclick = unduhRekapKelompok;
-  if ($('#bUnduhAbsenKel')) $('#bUnduhAbsenKel').onclick = () => {
+  if ($('#bUnduhHadirKel')) $('#bUnduhHadirKel').onclick = () => {
     const daftar = anggota.map(a => ({ nama: a.siswa, kelas: a.rombel || '',
       jk: (D.siswa.find(s => s.id === a.siswa_id) || {}).jk || '' }));
     // Pembimbing diambil dari jadwal. Satu kelompok bisa dipegang lebih
@@ -2971,7 +3000,8 @@ function halKelompok() {
       .map(j => j.guru))].sort().join(', ');
     unduhAbsenXlsx('Daftar Hadir ' + (kel.mapel || 'Kelompok Belajar'),
       { labelKelas: 'Kelompok', labelGuru: 'Pembimbing', nilaiGuru: pembimbing },
-      new Map([[kel.nama, daftar]]), kel.mapel || '');
+      new Map([[kel.nama, daftar]]), kel.mapel || '',
+      { namaBerkas: namaBerkasHadir(kel.nama), tahsin: PROGRAM_KELOMPOK.tahsin.pola.test(kel.mapel || kel.nama) });
   };
   $('#bUnduhPindahKel').onclick = () => unduhLembarKenaikan('kelompok');
   if ($('#bUbahKelompok')) $('#bUbahKelompok').onclick = () => formUbahKelompok(kel);
