@@ -3004,23 +3004,14 @@ function halKelompok() {
       }</tbody></table></div></div>` : `<div class="panel"><div class="empty">
         <b>Belum ada kelompok belajar</b>Muncul setelah kelompok dibuat dan mata pelajarannya diisi.</div></div>`}
 
-    ${D.dikecualikan.length ? `<div class="panel"><div class="panel-head"><h3>Dikecualikan</h3>
-      <div class="sp" style="flex:1"></div><div class="info">${D.dikecualikan.length} siswa</div></div>
-      <div class="scroll"><table><thead><tr>
-        <th>Siswa</th><th style="width:90px">Rombel</th><th style="width:140px">Program</th>
-        <th>Alasan</th><th style="width:150px" class="hide-sm">Dicatat oleh</th>
-      </tr></thead><tbody>${
-        D.dikecualikan.map(x => `<tr>
-          <td style="font-weight:500">${esc(x.siswa)}</td>
-          <td>${esc(x.rombel || '—')}</td><td>${esc(x.program)}</td>
-          <td class="kecil">${esc(x.alasan)}</td>
-          <td class="hide-sm kecil">${esc(x.dicatat_oleh || '—')}</td></tr>`).join('')
-      }</tbody></table></div></div>` : ''}`;
+    ${['tahsin', 'md'].map(panelLuarKelompok).join('')}`;
 
   $$('[data-kel]').forEach(b => b.onclick = () => { ui.kelompokPilih = b.dataset.kel; gambar(); });
   if ($('#bTambahAnggota')) $('#bTambahAnggota').onclick = () => formAnggota(kel);
   $('#bTambahKelompok').onclick = formKelompok;
   if ($('#bLihatBelum')) $('#bLihatBelum').onclick = dialogBelumKelompok;
+  $$('[data-masukkan]').forEach(b => b.onclick = () => formMasukkanKelompok(b.dataset.masukkan, b.dataset.p));
+  $$('[data-kecualikan]').forEach(b => b.onclick = () => formKecualikanKelompok(b.dataset.kecualikan, b.dataset.p));
   $('#bUnduhKelompok').onclick = unduhRekapKelompok;
   if ($('#bUnduhHadirKel')) $('#bUnduhHadirKel').onclick = () => {
     const daftar = anggota.map(a => ({ nama: a.siswa, kelas: a.rombel || '',
@@ -3317,6 +3308,88 @@ async function riwayatKelompok(siswaId, nama) {
       : '<tr><td colspan="4"><div class="empty">Belum ada keanggotaan tahun ini.</div></td></tr>'}</tbody></table>
     </div><div class="aksi"><button class="btn" id="m-batal">Tutup</button></div>`);
   $('#m-batal').onclick = tutupModal;
+}
+
+/* Siswa di luar kelompok, satu tabel per program (Tahsin, Matematika Dasar):
+   yang BELUM dimasukkan (belum punya kelompok dan belum dicatat alasannya)
+   di atas dengan tanda kuning, lalu yang DIKECUALIKAN beserta alasannya.
+   Dengan begitu siswa yang terlewat — mis. siswa baru — langsung terlihat
+   di halaman, tidak hanya lewat tautan "Lihat daftarnya". */
+const NAMA_PROGRAM = { tahsin: 'Tahsin', md: 'Matematika Dasar' };
+function panelLuarKelompok(p) {
+  const pola = PROGRAM_KELOMPOK[p].pola;
+  const belum = D.belumKelompok.filter(x => p === 'md' ? x.belum_matdas : x.belum_tahsin)
+    .sort((a, b) => (a.rombel || '').localeCompare(b.rombel || '', 'id', { numeric: true }) || a.siswa.localeCompare(b.siswa, 'id'));
+  const kecuali = D.dikecualikan.filter(x => pola.test(x.program || ''))
+    .sort((a, b) => (a.rombel || '').localeCompare(b.rombel || '', 'id', { numeric: true }) || a.siswa.localeCompare(b.siswa, 'id'));
+  const info = [belum.length && `<b style="color:var(--emas-teks)">${belum.length} belum dimasukkan</b>`,
+                `${kecuali.length} dikecualikan`].filter(Boolean).join(' · ');
+  const baris = [
+    ...belum.map(x => `<tr style="background:var(--emas-kabut)">
+      <td style="font-weight:600">${esc(x.siswa)}</td>
+      <td>${x.rombel ? `<span class="tag" style="background:${warnaTingkat(tingkatDari(x.rombel))}">${esc(x.rombel)}</span>` : '—'}</td>
+      <td><span class="tag tag-w">Belum dimasukkan</span></td>
+      <td class="kecil">Belum masuk kelompok ${esc(NAMA_PROGRAM[p])} dan belum dicatat alasannya.</td>
+      <td class="act"><button class="btn btn-sm btn-p" data-masukkan="${esc(x.siswa_id)}" data-p="${p}">Masukkan</button>
+        <button class="btn btn-sm" data-kecualikan="${esc(x.siswa_id)}" data-p="${p}">Kecualikan</button></td></tr>`),
+    ...kecuali.map(x => `<tr>
+      <td style="font-weight:500">${esc(x.siswa)}</td>
+      <td>${x.rombel ? `<span class="tag" style="background:${warnaTingkat(tingkatDari(x.rombel))}">${esc(x.rombel)}</span>` : '—'}</td>
+      <td><span class="tag tag-l">Dikecualikan</span></td>
+      <td class="kecil">${esc(x.alasan)}</td>
+      <td class="kecil">${esc(x.dicatat_oleh || '—')}</td></tr>`),
+  ];
+  return `<div class="panel"><div class="panel-head"><h3>Di luar kelompok — ${esc(NAMA_PROGRAM[p])}</h3>
+    <div class="sp" style="flex:1"></div><div class="info">${info}</div></div>
+    <div class="scroll"><table style="table-layout:fixed;min-width:760px">
+      <colgroup><col style="width:24%"><col style="width:90px"><col style="width:160px"><col><col style="width:210px"></colgroup>
+      <thead><tr>
+      <th>Siswa</th><th>Rombel</th><th>Keterangan</th>
+      <th>Alasan</th><th>Dicatat oleh / tindakan</th>
+    </tr></thead><tbody>${baris.join('') ||
+      `<tr><td colspan="5"><div class="empty"><b>Semua siswa aktif sudah tertangani</b>Tidak ada yang belum masuk kelompok ${esc(NAMA_PROGRAM[p])}.</div></td></tr>`
+    }</tbody></table></div></div>`;
+}
+
+// Masukkan satu siswa yang terlewat ke kelompok program itu (MD: hanya kelompok setingkat).
+function formMasukkanKelompok(siswaId, p) {
+  const x = D.belumKelompok.find(b => b.siswa_id === siswaId);
+  const tingkat = x && tingkatDari(x.rombel);
+  const pilihan = kelompokProgram(p).filter(k => !k.tingkat || k.tingkat === tingkat)
+    .sort((a, b) => urutNama(a.nama, b.nama));
+  if (!pilihan.length) return toast(`Belum ada kelompok ${NAMA_PROGRAM[p]} yang aktif${p === 'md' ? ' untuk tingkat ' + tingkat : ''}.`, true);
+  formulir({
+    judul: `Masukkan ke kelompok ${NAMA_PROGRAM[p]}`,
+    catatan: `${x ? x.siswa : ''} (${x ? x.rombel : ''})` +
+      (p === 'md' ? ` — hanya kelompok tingkat ${tingkat} yang ditawarkan.` : ''),
+    nilai: {},
+    kolom: [{ k: 'kelas_id', label: 'Kelompok', tipe: 'pilih', wajib: true,
+              opsi: [{ v: '', t: '— pilih kelompok —' }, ...pilihan.map(k => ({ v: k.id, t: k.nama }))] }],
+    simpan: async n => {
+      if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
+      await simpanBaru('anggota_kelompok', { siswa_id: siswaId, kelas_id: n.kelas_id, tahun_ajaran: sesi.ta });
+      await muatSemua();
+      toast('Siswa dimasukkan ke kelompok');
+    }
+  });
+}
+
+// Catat alasan siswa tidak mengikuti program, supaya tidak lagi terhitung terlewat.
+function formKecualikanKelompok(siswaId, p) {
+  const x = D.belumKelompok.find(b => b.siswa_id === siswaId);
+  formulir({
+    judul: `Kecualikan dari ${NAMA_PROGRAM[p]}`,
+    catatan: `${x ? x.siswa : ''} (${x ? x.rombel : ''})`,
+    nilai: { alasan: `Tidak mengikuti program ${NAMA_PROGRAM[p]}` },
+    kolom: [{ k: 'alasan', label: 'Alasan', wajib: true }],
+    simpan: async n => {
+      if (MODE === 'contoh') { toast('Mode contoh: tidak tersimpan'); return; }
+      await simpanBaru('pengecualian_kelompok', { siswa_id: siswaId, mapel_id: mapelProgram(p),
+        tahun_ajaran: sesi.ta, alasan: n.alasan.trim(), dicatat_oleh: sesi.petugas || null });
+      await muatSemua();
+      toast('Pengecualian dicatat');
+    }
+  });
 }
 
 function dialogBelumKelompok() {
