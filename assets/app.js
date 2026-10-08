@@ -94,6 +94,9 @@ function pesanRamah(e) {
   const m = e && e.message ? e.message : String(e);
   if (/violates foreign key/i.test(m))
     return 'Data ini masih dipakai di tempat lain, jadi tidak bisa dihapus. Ubah statusnya menjadi nonaktif saja.';
+  // Sebut kolom yang kembar bila nama batasannya dikenali.
+  if (/siswa_nisn_key/i.test(m)) return 'NISN ini sudah dipakai siswa lain (periksa juga siswa berstatus pindah/keluar/lulus).';
+  if (/siswa_nis_key/i.test(m)) return 'NIS ini sudah dipakai siswa lain (periksa juga siswa berstatus pindah/keluar/lulus).';
   if (/duplicate key|already exists/i.test(m))
     return 'Data dengan penanda yang sama sudah ada.';
   return m;
@@ -554,7 +557,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal()
 /* Formulir umum.
    kolom: [{k, label, tipe:'teks|angka|tanggal|pilih|panjang', opsi:[{v,t}],
             wajib, hint, bila:(nilai)=>bool, pemicu:true}]            */
-function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus }) {
+function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus, periksa }) {
   const isi = { ...nilai };
 
   const gambarKolom = () => kolom.filter(k => !k.bila || k.bila(isi)).map(k => {
@@ -616,6 +619,15 @@ function formulir({ judul, kolom, nilai = {}, simpan, lebar, catatan, hapus }) {
       }
     });
     if (!ok) return;
+    // Pemeriksaan tambahan (mis. NISN kembar) sebelum formulir ditutup,
+    // supaya isian tidak hilang dan pesannya tampil di kolom yang salah.
+    const masalah = periksa && periksa(isi);
+    if (masalah) {
+      const f = $(`[data-fg="${masalah.k}"]`);
+      f.classList.add('bad');
+      f.insertAdjacentHTML('beforeend', `<div class="err">${esc(masalah.pesan)}</div>`);
+      return;
+    }
     tutupModal();
     await jalankan('Menyimpan…', () => simpan(isi));
   };
@@ -859,8 +871,21 @@ function formSiswa(id) {
       { k: 'status', label: 'Status', tipe: 'pilih', opsi: STATUS_SISWA.map(v => ({ v, t: v })),
         hint: 'Siswa mutasi keluar cukup diubah statusnya, jangan dihapus.' }
     ],
+    /* NISN dan NIS sama-sama unik di database. Siswa pemiliknya bisa saja
+       tidak terlihat di daftar (filter bawaan hanya status aktif), jadi
+       pesannya menyebut nama, kelas, dan statusnya. */
+    periksa: n => {
+      for (const [k, label] of [['nisn', 'NISN'], ['nis', 'NIS']]) {
+        const v = String(n[k] || '').trim();
+        const x = v && D.siswa.find(x => x.id !== id && String(x[k] || '').trim() === v);
+        if (x) return { k, pesan: `${label} ${v} sudah dipakai ${x.nama}` +
+          ` (${x.kelas || 'belum punya kelas'}, status ${x.status}).` +
+          (x.status !== 'aktif' ? ' Siswa ini tidak tampil karena daftar hanya menampilkan siswa aktif — ubah filter ke "Semua status" untuk melihatnya.' : '') };
+      }
+      return null;
+    },
     simpan: async n => {
-      const isi = { nisn: n.nisn || null, nis: n.nis || null, nama: n.nama.trim(),
+      const isi = { nisn: String(n.nisn || '').trim() || null, nis: String(n.nis || '').trim() || null, nama: n.nama.trim(),
                     jenis_kelamin: n.jk || null, tanggal_lahir: n.tgl || null, status: n.status || 'aktif' };
       if (MODE === 'contoh') {
         if (id) Object.assign(s, n); else D.siswa.push({ id: 'S' + Date.now(), ...n });
