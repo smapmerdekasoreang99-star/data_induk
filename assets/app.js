@@ -7,8 +7,8 @@
    tampilan bisa dicoba dengan data karangan, tanpa menyentuh database.
    ===================================================================== */
 const KONFIG = {
-  url:     'https://xgtoneyvzfvfbidicotq.supabase.co',                                 // https://xxxxx.supabase.co
-  anonKey: 'sb_publishable_rjHVGT0ULc03TC2ljIytSA_2X54xzR1',                                 // Settings > API > anon public
+  url:     'https://dcakhvbfuhedebnbjndr.supabase.co',                                 // https://xxxxx.supabase.co
+  anonKey: 'sb_publishable_j_1jJEBNhjfhhKYXja1FLw_RkFs_Fsx',                                 // Settings > API > anon public
   akun:    'operator@smapmerdeka.sch.id',      // akun bersama
   sekolah: 'SMA Plus Merdeka Soreang'
 };
